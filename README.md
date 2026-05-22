@@ -32,16 +32,20 @@ The same pipeline serves a **Lorebook** — a structured knowledge base of chara
 
 ### Backend
 ```bash
-cd memorylm-backend
 python3 -m venv venv
+# Linux/macOS
 source venv/bin/activate
+
+#Windows
+venv\Scripts\activate
+
 pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
 ### Frontend
 ```bash
-cd memorylm
+cd frontend
 npm install
 npm run dev
 ```
