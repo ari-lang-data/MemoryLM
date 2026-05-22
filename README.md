@@ -65,6 +65,7 @@ Open `http://localhost:5173`. In Settings, set your LM Studio server URL (defaul
 
 ## Requirements
 
+- Node.js 20+ and Python 3.10+
 - LM Studio with a model loaded and local server running
 - Internet connection on first launch — downloads the MiniLM-L6-v2 embedding model (~25MB) from Hugging Face via CDN, cached by the browser after first use. Subsequent sessions work offline.
 
