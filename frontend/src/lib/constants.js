@@ -1,0 +1,50 @@
+// ─── Constants ────────────────────────────────────────────────────────────────
+export const EMBED_MODEL = "Xenova/all-MiniLM-L6-v2";
+export const DEFAULT_LM_STUDIO_URL = "http://localhost:1234";
+export const DEDUP_THRESHOLD = 0.85;
+
+export const STORAGE_KEYS = {
+  chats:        "mem_chats",
+  activeChat:   "mem_active_chat",
+  memories:     "mem_memories",
+  lorebook:     "mem_lorebook",
+  config:       "mem_config",
+  messages:     "mem_messages",
+  presets:      "mem_presets",
+  activePreset: "mem_active_preset",
+};
+
+// ─── Default presets ──────────────────────────────────────────────────────────
+export const DEFAULT_PRESETS = [
+  {
+    id: "assistant",
+    name: "Assistant",
+    icon: "🤖",
+    systemPrompt: "You are a helpful, precise assistant.",
+    config: { chunkEvery: 6, topK: 3, threshold: 0.4, temperature: 0.5, autoSummarise: true, dedupMode: "discard", dedupThreshold: 0.85, modelName: "" },
+  },
+  {
+    id: "creative",
+    name: "Creative / RP",
+    icon: "🪶",
+    systemPrompt: "You are a creative collaborator and storyteller. Stay in character, write vividly, and maintain narrative continuity.",
+    config: { chunkEvery: 3, topK: 6, threshold: 0.3, temperature: 0.7, repetitionPenalty: 1.1, autoSummarise: true, dedupMode: "merge", dedupThreshold: 0.88, modelName: "" },
+  },
+  {
+    id: "coding",
+    name: "Coding",
+    icon: "💻",
+    systemPrompt: "You are an expert programmer. Be concise, correct, and prefer working code over explanation unless asked.",
+    config: { chunkEvery: 8, topK: 2, threshold: 0.5, temperature: 0.5, repetitionPenalty: 1.1, autoSummarise: true, dedupMode: "discard", dedupThreshold: 0.9, modelName: "" },
+  },
+];
+
+export const inputStyle = {
+  padding: "7px 10px",
+  borderRadius: "var(--border-radius-md)",
+  border: "0.5px solid var(--color-border-tertiary)",
+  background: "var(--color-background-secondary)",
+  color: "var(--color-text-primary)",
+  fontSize: 13,
+  fontFamily: "var(--font-sans)",
+};
