@@ -20,11 +20,17 @@ The same pipeline serves a **Lorebook** — a structured knowledge base of chara
 - 🎭 Persona presets — bundled system prompts + memory parameters per use case
 - 💬 Multi-chat support with persistent message history
 - 🔁 Memory deduplication (merge or discard near-duplicate memories)
+- 🌊 Token streaming — responses stream in real time rather than waiting for full completion
+- 📐 LaTeX rendering via KaTeX — inline and block math expressions rendered natively
+- 🕐 Recency-weighted retrieval — memories ranked by combined semantic similarity and recency, configurable per preset
+- ⏩ Narrative continuation — creative and roleplay presets expose a continuation button when input is empty, sending an implicit prompt to advance the story without cluttering the chat
+- 💬 Chat sidebar — slide-in panel for chat management with inline rename and delete
+- 🧠 Reasoning parsing — infrastructure for stripping and displaying model reasoning traces when exposed by the inference server
 - ⚙️ Fully local — no cloud APIs, no telemetry
 
 ## Stack
 
-**Frontend:** React + Vite, `@xenova/transformers` (in-browser embeddings via MiniLM-L6-v2)
+**Frontend:** React + Vite, `@xenova/transformers` (in-browser embeddings via MiniLM-L6-v2), `react-markdown`, `remark-math`, `rehype-katex`, `react-syntax-highlighter`
 
 **Backend:** FastAPI + ChromaDB + SQLite + JSON message storage
 
@@ -62,6 +68,19 @@ Open `http://localhost:5173`. In Settings, set your LM Studio server URL (defaul
 | Lorebook | ChromaDB |
 | Presets | SQLite |
 | UI state | localStorage |
+
+## Preset Styles
+
+Each persona preset carries a `style` field that affects chat behaviour:
+
+| Style | Continuation button | Notes |
+|-------|-------------------|-------|
+| `none` | Never shown | Standard assistant behaviour |
+| `creative` | Always shown when chat non-empty | Sends configurable continuation prompt |
+| `roleplay` | Always shown when chat non-empty | Same as creative, distinct for future differentiation |
+| `technical` | Shown only on token limit reached | Helps continue truncated responses |
+
+Recency ranking is also configurable per preset via `alpha` (similarity weight) and `decayRate` (hourly decay).
 
 ## Requirements
 

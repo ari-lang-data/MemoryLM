@@ -18,10 +18,12 @@ class MemoryUpdate(BaseModel):
     timestamp: str
 
 class MemoryQuery(BaseModel):
-    chat_id: str
+    chat_id:   str
     embedding: list[float]
     n_results: int = 4
     threshold: float = 0.35
+    alpha:     float = 0.7
+    decay_rate: float = 0.01
 
 # ─── Lorebook ─────────────────────────────────────────────────────────────────
 
@@ -71,6 +73,12 @@ class PresetConfig(BaseModel):
     dedupMode: str = "merge"
     dedupThreshold: float = 0.85
     modelName: str = ""
+    # Recency ranking
+    alpha: float = 0.7           # similarity weight (1-alpha = recency weight)
+    decayRate: float = 0.01      # how fast recency score decays per hour
+    # Narrative continuation
+    style: str = "none"          # "none" | "creative" | "roleplay" | "technical"
+    continuationPrompt: str = "Advance the narrative."
 
 class PresetSave(BaseModel):
     id: str

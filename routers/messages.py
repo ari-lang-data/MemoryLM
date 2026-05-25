@@ -18,6 +18,9 @@ class Message(BaseModel):
     content: str
     injectedMems: int = 0
     injectedLore: int = 0
+    implicit: bool = False
+    finishReason: str = "stop"
+    reasoning: str | None = None
 
 class MessagesSave(BaseModel):
     messages: list[Message]
