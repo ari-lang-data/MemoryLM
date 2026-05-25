@@ -21,21 +21,36 @@ export const DEFAULT_PRESETS = [
     name: "Assistant",
     icon: "🤖",
     systemPrompt: "You are a helpful, precise assistant.",
-    config: { chunkEvery: 6, topK: 3, threshold: 0.4, temperature: 0.5, autoSummarise: true, dedupMode: "discard", dedupThreshold: 0.85, modelName: "" },
+    config: {
+      chunkEvery: 6, topK: 3, threshold: 0.4, temperature: 0.5,
+      autoSummarise: true, dedupMode: "discard", dedupThreshold: 0.85,
+      modelName: "", alpha: 0.7, decayRate: 0.01,
+      style: "none", continuationPrompt: "Advance the narrative."
+    },
   },
   {
     id: "creative",
     name: "Creative / RP",
     icon: "🪶",
     systemPrompt: "You are a creative collaborator and storyteller. Stay in character, write vividly, and maintain narrative continuity.",
-    config: { chunkEvery: 3, topK: 6, threshold: 0.3, temperature: 0.7, repetitionPenalty: 1.1, autoSummarise: true, dedupMode: "merge", dedupThreshold: 0.88, modelName: "" },
+    config: {
+      chunkEvery: 3, topK: 6, threshold: 0.3, temperature: 0.7,
+      repetitionPenalty: 1.1, autoSummarise: true, dedupMode: "merge",
+      dedupThreshold: 0.88, modelName: "", alpha: 0.5, decayRate: 0.005,
+      style: "creative", continuationPrompt: "Advance the narrative."
+    },
   },
   {
     id: "coding",
     name: "Coding",
     icon: "💻",
     systemPrompt: "You are an expert programmer. Be concise, correct, and prefer working code over explanation unless asked.",
-    config: { chunkEvery: 8, topK: 2, threshold: 0.5, temperature: 0.5, repetitionPenalty: 1.1, autoSummarise: true, dedupMode: "discard", dedupThreshold: 0.9, modelName: "" },
+    config: {
+      chunkEvery: 8, topK: 2, threshold: 0.5, temperature: 0.5,
+      repetitionPenalty: 1.1, autoSummarise: true, dedupMode: "discard",
+      dedupThreshold: 0.9, modelName: "", alpha: 0.8, decayRate: 0.02,
+      style: "technical", continuationPrompt: "Continue."
+    },
   },
 ];
 

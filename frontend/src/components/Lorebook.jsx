@@ -1,7 +1,7 @@
 import{inputStyle, STORAGE_KEYS} from "../lib/constants";
 import {saveStorage} from "../lib/storage";
 import {Card} from "./ui/shared";
-export default function Lorebook({lorebook,lorebookDraft,editingLore, TYPE_COLORS,LORE_TYPES, setLorebookDraft, addLorebookEntry, deleteLorebookEntry}){
+export default function Lorebook({lorebook,lorebookDraft,editingLore, setEditingLore, TYPE_COLORS,LORE_TYPES, setLorebookDraft, addLorebookEntry, deleteLorebookEntry}){
     return(
         <div style={{ flex: 1, display: "flex", overflow: "hidden", width: "100%", maxWidth: 800 }}>
             <div style={{ flex: 1, overflowY: "auto", padding: 16, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column", gap: 10 }}>

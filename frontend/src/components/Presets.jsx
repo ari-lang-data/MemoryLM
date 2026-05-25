@@ -29,6 +29,11 @@ systemPrompt, config, applyPreset,savePreset,deletePreset, presetDraft, setPrese
                         <span>Rep {preset.config.repetitionPenalty}</span>
                         <span>{preset.config.dedupMode}</span>
                         {preset.config.modelName && <span>"{preset.config.modelName}"</span>}
+                        {preset.config.style && preset.config.style !== "none" && (
+                          <span>{preset.config.style}</span>
+                        )}
+                        <span>α {preset.config.alpha ?? 0.7}</span>
+                        <span>decay {preset.config.decayRate ?? 0.01}</span>
                       </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}>
@@ -66,6 +71,44 @@ systemPrompt, config, applyPreset,savePreset,deletePreset, presetDraft, setPrese
                     <span style={{ fontSize: 12, fontWeight: 500, minWidth: 32, textAlign: "right" }}>{presetDraft.config[key] ?? min}</span>
                   </div>
                 ))}
+                {[
+                  { label: "Similarity weight (alpha)", key: "alpha",     min: 0.1, max: 0.9,  step: 0.05 },
+                  { label: "Recency decay rate",        key: "decayRate", min: 0.001, max: 0.1, step: 0.001 },
+                ].map(({ label, key, min, max, step }) => (
+                  <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <label style={{ fontSize: 12, color: "var(--color-text-secondary)", flex: 1 }}>{label}</label>
+                    <input type="range" min={min} max={max} step={step} value={presetDraft.config[key] ?? min} onChange={e => setPresetDraft(d => ({ ...d, config: { ...d.config, [key]: parseFloat(e.target.value) } }))} style={{ width: 80 }} />
+                    <span style={{ fontSize: 12, fontWeight: 500, minWidth: 36, textAlign: "right" }}>{presetDraft.config[key] ?? min}</span>
+                  </div>
+                ))}
+
+                {/* Style selector */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", flex: 1 }}>Style</label>
+                  <select
+                    value={presetDraft.config.style ?? "none"}
+                    onChange={e => setPresetDraft(d => ({ ...d, config: { ...d.config, style: e.target.value } }))}
+                    style={{ ...inputStyle, fontSize: 12 }}
+                  >
+                    <option value="none">None</option>
+                    <option value="creative">Creative</option>
+                    <option value="roleplay">Roleplay</option>
+                    <option value="technical">Technical</option>
+                  </select>
+                </div>
+
+                {/* Continuation prompt — only show when style is not none */}
+                {presetDraft.config.style && presetDraft.config.style !== "none" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <label style={{ fontSize: 12, color: "var(--color-text-secondary)", flex: 1 }}>Continuation prompt</label>
+                    <input
+                      value={presetDraft.config.continuationPrompt ?? "Advance the narrative."}
+                      onChange={e => setPresetDraft(d => ({ ...d, config: { ...d.config, continuationPrompt: e.target.value } }))}
+                      placeholder="Advance the narrative."
+                      style={{ ...inputStyle, fontSize: 12, flex: 1 }}
+                    />
+                  </div>
+                )}
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <label style={{ fontSize: 12, color: "var(--color-text-secondary)", flex: 1 }}>Dedup mode</label>
                   <select value={presetDraft.config.dedupMode} onChange={e => setPresetDraft(d => ({ ...d, config: { ...d.config, dedupMode: e.target.value } }))} style={{ ...inputStyle, fontSize: 12 }}>

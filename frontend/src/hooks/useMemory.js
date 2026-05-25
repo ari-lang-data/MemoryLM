@@ -1,6 +1,7 @@
 import { lmFetch } from "../lib/lmFetch";
 import { memoriesAPI } from "../lib/api";
 import useEmbedder from "./useEmbedder";
+import { parseReasoning } from "../lib/parseReasoning";
 
 export default function useMemory({ configRef, lmUrlRef, activeChatId, addLog, setMemories }) {
   const { embed } = useEmbedder();
@@ -14,7 +15,9 @@ export default function useMemory({ configRef, lmUrlRef, activeChatId, addLog, s
       activeChatId,
       newVec,
       1,                      // only need the closest match
-      cfg.dedupThreshold
+      cfg.dedupThreshold,
+      1.0,
+      0.0
     );
 
     if (near.length === 0) return null;
@@ -25,7 +28,7 @@ export default function useMemory({ configRef, lmUrlRef, activeChatId, addLog, s
     }
 
     // Merge mode — ask the LLM to combine them
-    const merged = await lmFetch(
+    const {content: merged} = await lmFetch(
       [{ role: "user", content: `Memory A: ${near[0].summary}\n\nMemory B: ${newSummary}` }],
       "Merge two overlapping memory summaries into one concise summary preserving all unique detail. Output only the merged text, no preamble.",
       configRef,
@@ -41,10 +44,13 @@ export default function useMemory({ configRef, lmUrlRef, activeChatId, addLog, s
   async function summariseAndStore(turns) {
     const cfg = configRef.current;
     const transcript = turns
-      .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+      .map(m => {
+        const { content } = parseReasoning(m.content);
+        return `${m.role === "user" ? "User" : "Assistant"}: ${content}`;
+      })
       .join("\n");
 
-    const summary = await lmFetch(
+    const {content: summary} = await lmFetch(
       [{ role: "user", content: `Summarise this conversation excerpt for long-term memory:\n\n${transcript}` }],
       "You are a memory extraction assistant. Produce a concise factual summary (3–6 sentences) covering what was discussed, decisions made, character details, and important context. Be specific. Output only the summary, no preamble.",
       configRef,

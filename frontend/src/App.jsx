@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI } from "./lib/api";
 
 import useEmbedder from "./hooks/useEmbedder";
+import ChatSidebar from "./components/ChatSidebar"
+import {parseReasoning} from "./lib/parseReasoning";
 // ── LM fetch ────────────────────────────────────────────────────────────────
 import {lmFetch} from "./lib/lmFetch";
 
@@ -40,6 +42,7 @@ export default function App() {
   const [editingMessage, setEditingMessage] = useState(null); // holds { index, draft }
   const [activeChatId,   setActiveChatId]   = useState(null);
   const [lorebook,       setLorebook]       = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [input,          setInput]          = useState("");
   const [loading,        setLoading]        = useState(false);
   const [activePanel,    setActivePanel]    = useState("chat");
@@ -169,33 +172,38 @@ export default function App() {
   }
 
   async function deleteChat(id) {
-  await chatsAPI.delete(id); // also wipes ChromaDB memories for this chat
-  await messagesAPI.clear(id);
-  const remaining = chats.filter(chat => chat.id !== id);
+    await chatsAPI.delete(id); // also wipes ChromaDB memories for this chat
+    await messagesAPI.clear(id);
+    const remaining = chats.filter(chat => chat.id !== id);
 
-  if (remaining.length === 0) {
-    const fresh = {
-      id:         crypto.randomUUID(),
-      title:      "New Chat",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      messages:   [],
-    };
-    await chatsAPI.create(fresh.id, fresh.title, fresh.created_at, fresh.updated_at);
+    if (remaining.length === 0) {
+      const fresh = {
+        id:         crypto.randomUUID(),
+        title:      "New Chat",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        messages:   [],
+      };
+      await chatsAPI.create(fresh.id, fresh.title, fresh.created_at, fresh.updated_at);
 
-    setChats([fresh]);
-    setActiveChatId(fresh.id);
-    saveStorage(STORAGE_KEYS.activeChat, fresh.id);
-    return;
+      setChats([fresh]);
+      setActiveChatId(fresh.id);
+      saveStorage(STORAGE_KEYS.activeChat, fresh.id);
+      return;
+    }
+
+    setChats(remaining);
+
+    if (activeChatId === id) {
+      setActiveChatId(remaining[0].id);
+      saveStorage(STORAGE_KEYS.activeChat, remaining[0].id);
+    }
   }
 
-  setChats(remaining);
-
-  if (activeChatId === id) {
-    setActiveChatId(remaining[0].id);
-    saveStorage(STORAGE_KEYS.activeChat, remaining[0].id);
+  async function renameChat(id, title) {
+    await chatsAPI.update(id, title, new Date().toISOString());
+    setChats(prev => prev.map(c => c.id === id ? { ...c, title } : c));
   }
-}
 
   //――― Migration ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
   async function migrateMessagesFromLocalStorage() {
@@ -243,7 +251,7 @@ export default function App() {
       )
       .join("\n");
 
-    const title = await lmFetch(
+    const {content: title} = await lmFetch(
       [
         {
           role: "user",
@@ -301,12 +309,13 @@ export default function App() {
     const cfg      = configRef.current;
     const last     = history[history.length - 1];
     const queryVec = await embed(last.content);
+
     const relMems = queryVec
-    ? await memoriesAPI.query(activeChatId, queryVec, cfg.topK, cfg.threshold)
-    : [];
-  const relLore = queryVec
-    ? await lorebookAPI.query(queryVec, cfg.topK, cfg.threshold)
-    : [];
+      ? await memoriesAPI.query(activeChatId, queryVec, cfg.topK, cfg.threshold, cfg.alpha ?? 0.7, cfg.decayRate ?? 0.01)
+      : [];
+    const relLore = queryVec
+      ? await lorebookAPI.query(queryVec, cfg.topK, cfg.threshold)
+      : [];
 
     let injected = systemPrompt;
     if (relMems.length > 0)
@@ -316,39 +325,100 @@ export default function App() {
     if (relMems.length + relLore.length > 0)
       addLog(`Injected ${relMems.length} mem + ${relLore.length} lore`);
 
-    const reply = await lmFetch(history.map(m => ({ role: m.role, content: m.content })), injected, configRef, lmUrlRef);
-    const assistantMsg = { role: "assistant", content: reply ?? "(no response)", injectedMems: relMems.length, injectedLore: relLore.length };
-    const next = [...history, assistantMsg];
-    let newTitle = null;
+    // Create placeholder message immediately
+    const placeholderMsg = {
+      role:         "assistant",
+      content:      "",
+      finishReason: "stop",
+      reasoning:    null,
+      injectedMems: relMems.length,
+      injectedLore: relLore.length,
+    };
 
-    if (
-      activeChat?.title === "New Chat" &&
-      next.length >= 2
-    ) {
-      try {
-        newTitle = await generateChatTitle(next);
-        if (newTitle) {
-          await chatsAPI.update(activeChatId, newTitle, new Date().toISOString());
-        }
-      } catch(e) {
-        console.error("title gen failed", e);
+    const historyWithPlaceholder = [...history, placeholderMsg];
+    updateActiveChat(chat => ({ ...chat, messages: historyWithPlaceholder, updatedAt: new Date().toISOString() }));
+
+    // Stream — update placeholder in place as chunks arrive
+    const { content: rawReply, finishReason } = await lmFetch(
+      history.map(m => ({ role: m.role, content: m.content })),
+      injected,
+      configRef,
+      lmUrlRef,
+      (accumulated) => {
+        updateActiveChat(chat => ({
+          ...chat,
+          messages: chat.messages.map((m, i) =>
+            i === chat.messages.length - 1
+              ? { ...m, content: accumulated }
+              : m
+          ),
+          updatedAt: new Date().toISOString(),
+        }));
       }
-    }
-    updateActiveChat(chat => ({ ...chat, title: newTitle || chat.title, messages: next, updatedAt: new Date().toISOString() }));
+    );
 
+    const { reasoning, content: reply } = parseReasoning(rawReply);
+
+    // Final update with complete content and metadata
+    const finalMsg = {
+      role:         "assistant",
+      content:      reply ?? "(no response)",
+      reasoning,
+      finishReason,
+      injectedMems: relMems.length,
+      injectedLore: relLore.length,
+    };
+
+    const finalHistory = [...history, finalMsg];
+    updateActiveChat(chat => ({
+      ...chat,
+      messages: finalHistory,
+      updatedAt: new Date().toISOString(),
+    }));
+
+    // Save final messages
+    await messagesAPI.save(activeChatId, finalHistory);
+
+    // Auto-summarise
     turnsSinceChunk.current += 1;
     if (cfg.autoSummarise && turnsSinceChunk.current >= cfg.chunkEvery) {
       turnsSinceChunk.current = 0;
-      summariseAndStore(next.slice(-cfg.chunkEvery * 2));
+      summariseAndStore(finalHistory.slice(-cfg.chunkEvery * 2));
+    }
+
+    // Title generation
+    if (activeChat?.title === "New Chat" && finalHistory.length >= 2) {
+      try {
+        const newTitle = await generateChatTitle(finalHistory);
+        if (newTitle) await chatsAPI.update(activeChatId, newTitle, new Date().toISOString());
+        setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, title: newTitle || c.title } : c));
+      } catch(e) { console.error("title gen failed", e); }
     }
   }
 
   async function sendMessage() {
-    if (!input.trim() || loading) return;
-    const userMsg = { role: "user", content: input.trim() };
+    const cfg = configRef.current;
+    const isImplicitContinuation =
+      !input.trim() &&
+      (cfg.style === "creative" || cfg.style === "roleplay" ||
+      (cfg.style === "technical" && messages[messages.length - 1]?.finishReason === "length"));
+
+    if (!isImplicitContinuation && !input.trim() || loading) return;
+
+    const content  = isImplicitContinuation
+      ? (cfg.continuationPrompt ?? "Advance the narrative.")
+      : input.trim();
+
+    // Mark implicit continuations so they don't show in the chat UI
+    const userMsg = {
+      role:     "user",
+      content,
+      implicit: isImplicitContinuation,
+    };
+
     const history = [...messages, userMsg];
     updateActiveChat(chat => ({ ...chat, messages: history, updatedAt: new Date().toISOString() }));
-    setInput("");
+    if (!isImplicitContinuation) setInput("");
     setLoading(true);
     try { await sendMessageWith(history); }
     catch(e) { updateActiveChat(chat => ({ ...chat, messages: [...chat.messages, { role: "assistant", content: `Error: ${e.message}` }], updatedAt: new Date().toISOString() })); }
@@ -417,10 +487,25 @@ export default function App() {
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ fontFamily: "var(--font-sans)", display: "flex", flexDirection: "column", height: "100vh", background: "var(--color-background-tertiary)" }}>
-
+    
+      <ChatSidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        chats={chats}
+        activeChatId={activeChatId}
+        onSelectChat={switchChat}
+        onNewChat={() => { createNewChat(); setSidebarOpen(false); }}
+        onDeleteChat={deleteChat}
+        onRenameChat={renameChat}
+      />
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)", flexShrink: 0 }}>
-        <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.3px" }}>MemoryLM</span>
+        <button
+          onClick={() => setSidebarOpen(o => !o)}
+          style={{ fontFamily: "Playfair Display",fontWeight: 650, fontSize: 17, letterSpacing: "-0.3px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-primary)", padding: 0 }}
+        >
+          MemoryLM
+        </button>
         <div style={{ display: "flex", gap: 3, marginLeft: 6 }}>
           {["chat","memory","lorebook","presets","settings"].map(p => (
             <button key={p} onClick={() => setActivePanel(p)} style={{ padding: "4px 11px", fontSize: 12, borderRadius: "var(--border-radius-md)", border: activePanel === p ? "0.5px solid var(--color-border-primary)" : "0.5px solid transparent", background: activePanel === p ? "var(--color-background-secondary)" : "transparent", color: activePanel === p ? "var(--color-text-primary)" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: activePanel === p ? 500 : 400 }}>
@@ -468,7 +553,7 @@ export default function App() {
 
             messagesEndRef={messagesEndRef}
 
-            inputStyle={inputStyle}
+            config={config}
           />
         )}
 
@@ -490,6 +575,7 @@ export default function App() {
             lorebook={lorebook}
             lorebookDraft={lorebookDraft}
             editingLore={editingLore}
+            setEditingLore={setEditingLore}
             TYPE_COLORS={TYPE_COLORS}
             LORE_TYPES={LORE_TYPES}
             setLorebookDraft={setLorebookDraft}
