@@ -17,8 +17,8 @@ export default function Memory({memories, memoryLog, config, addManualMemory, up
                 <Card key={m.id}>
                   <div style={{ display: "flex", gap: 8 }}>
                     <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65, flex: 1 }}>{m.summary}</p>
-                    {/* FIX #8: delete memory via deleteMemory, not updateActiveChat*/}
-                    <button onClick={() => deleteMemory(m.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 17, flexShrink: 0, alignSelf: "flex-start" }}>×</button>
+                    {/* FIX #8: delete memory via updateActiveChat, not setMemories */}
+                    <button onClick={() => deleteMemory(chat => ({ ...chat, memories: chat.memories.filter(x => x.id !== m.id), updatedAt: new Date().toISOString() }))} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 17, flexShrink: 0, alignSelf: "flex-start" }}>×</button>
                   </div>
                   <div style={{ marginTop: 6, display: "flex", gap: 8 }}>
                     <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: "var(--border-radius-md)", background: m.source === "auto" ? "var(--color-background-info)" : "var(--color-background-success)", color: m.source === "auto" ? "var(--color-text-info)" : "var(--color-text-success)", border: "0.5px solid currentColor", opacity: 0.8 }}>{m.source}</span>

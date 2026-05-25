@@ -1,9 +1,6 @@
 import {loadStorage} from "../lib/storage";
 import{inputStyle} from "../lib/constants";
 import ReactMarkdown from "react-markdown";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import "katex/dist/katex.min.css";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 export default function Chat({chats,
@@ -106,8 +103,6 @@ export default function Chat({chats,
                     <div style={{ maxWidth: 680, display: "flex", flexDirection: "column", gap: 3, alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
                       <div style={{ padding: "10px 14px", borderRadius: "var(--border-radius-lg)", background: m.role === "user" ? "var(--color-background-info)" : "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 14, lineHeight: 1.65, color: m.role === "user" ? "var(--color-text-info)" : "var(--color-text-primary)" }}>
                         <ReactMarkdown
-                        remarkPlugins={[remarkMath]}
-                        rehypePlugins={[rehypeKatex]}
                           components={{
                             code({ node, inline, className, children, ...props }) {
                               const match = /language-(\w+)/.exec(className || "");
