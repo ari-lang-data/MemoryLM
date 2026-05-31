@@ -43,7 +43,7 @@ def query_memories(body: MemoryQuery):
 
     hits = []
     for id, doc, meta, dist in zip(ids, documents, metadatas, distances):
-        similarity = 1 - dist
+        similarity = max(0.0, min(1.0, 1 - dist))
         if similarity < body.threshold:
             continue
         recency = recency_score(str(meta.get("timestamp", "")), body.decay_rate)

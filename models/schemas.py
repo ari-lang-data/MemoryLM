@@ -61,6 +61,17 @@ class ChatUpdate(BaseModel):
     title: Optional[str] = None
     updated_at: str
 
+class Message(BaseModel):
+    role:             str
+    content:          str
+    injectedMems:     int = 0
+    injectedLore:     int = 0
+    injectedMemData:  list = []
+    injectedLoreData: list = []
+    implicit:         bool = False
+    finishReason:     str = "stop"
+    reasoning:        str | None = None
+
 # ─── Presets ──────────────────────────────────────────────────────────────────
 
 class PresetConfig(BaseModel):
