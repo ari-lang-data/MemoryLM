@@ -25,6 +25,7 @@ The same pipeline serves a **Lorebook** — a structured knowledge base of chara
 - 🕐 Recency-weighted retrieval — memories ranked by combined semantic similarity and recency, configurable per preset
 - ⏩ Narrative continuation — creative and roleplay presets expose a continuation button when input is empty, sending an implicit prompt to advance the story without cluttering the chat
 - 💬 Chat sidebar — slide-in panel for chat management with inline rename and delete
+- 🔍 Injection inspector — hover over the "N mem · N lore injected" line on any response to see exactly what context was retrieved, with memory scores and lorebook type indicators
 - 🧠 Reasoning parsing — infrastructure for stripping and displaying model reasoning traces when exposed by the inference server
 - ⚙️ Fully local — no cloud APIs, no telemetry
 
