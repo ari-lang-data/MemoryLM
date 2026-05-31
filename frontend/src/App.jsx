@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI } from "./lib/api";
 
 import useEmbedder from "./hooks/useEmbedder";
-import ChatSidebar from "./components/ChatSidebar"
 import {parseReasoning} from "./lib/parseReasoning";
 // ── LM fetch ────────────────────────────────────────────────────────────────
 import {lmFetch} from "./lib/lmFetch";
@@ -33,6 +32,8 @@ import {Card,CardTitle,Row} from "./components/ui/shared";
   import Lorebook from "./components/Lorebook";
   import Presets from "./components/Presets";
   import Settings from "./components/Settings";
+  import ChatSidebar from "./components/ChatSidebar";
+  import InjectionPanel from "./components/InjectionPanel";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -67,7 +68,8 @@ export default function App() {
 
   const activeChat = chats.find(c => c.id === activeChatId)?? chats[0];
   const messages   = activeChat?.messages ?? [];
-  //const memories   = activeChat?.memories ?? [];
+  const [injectionPanel, setInjectionPanel] = useState({ visible: false, memData: [], loreData: [] });
+  const hoverTimerRef = useRef(null);
 
   useEffect(() => { configRef.current  = config;      }, [config]);
   useEffect(() => { lmUrlRef.current   = lmStudioUrl; }, [lmStudioUrl]);
@@ -205,6 +207,24 @@ export default function App() {
     setChats(prev => prev.map(c => c.id === id ? { ...c, title } : c));
   }
 
+  function showInjectionPanel(memData, loreData) {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      setInjectionPanel({ visible: true, memData, loreData });
+    }, 500);
+  }
+
+  function hideInjectionPanel() {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      setInjectionPanel(p => ({ ...p, visible: false }));
+    }, 300); // small delay so moving to the panel itself doesn't close it
+  }
+
+  function keepPanelOpen() {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+  }
+
   //――― Migration ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
   async function migrateMessagesFromLocalStorage() {
     const keysToMigrate = Object.keys(localStorage)
@@ -272,7 +292,9 @@ export default function App() {
 
   // ── Lorebook ────────────────────────────────────────────────────────────────
   async function addLorebookEntry(draft) {
-    const vec  = await embed(`${draft.title} ${draft.tags} ${draft.content}`);
+  // Embed only title + tags for better retrieval matching
+    const embedText = `${draft.title} ${draft.tags}`.trim();
+    const vec  = await embed(embedText);
     const entry = {
       id:        `lore_${Date.now()}`,
       title:     draft.title,
@@ -308,7 +330,15 @@ export default function App() {
   async function sendMessageWith(history) {
     const cfg      = configRef.current;
     const last     = history[history.length - 1];
-    const queryVec = await embed(last.content);
+    const queryContent = last.implicit
+    ? history
+        .filter(m => !m.implicit)
+        .slice(-3)
+        .map(m => m.content)
+        .join(" ")
+    : last.content;
+
+  const queryVec = await embed(queryContent);
 
     const relMems = queryVec
       ? await memoriesAPI.query(activeChatId, queryVec, cfg.topK, cfg.threshold, cfg.alpha ?? 0.7, cfg.decayRate ?? 0.01)
@@ -333,6 +363,8 @@ export default function App() {
       reasoning:    null,
       injectedMems: relMems.length,
       injectedLore: relLore.length,
+      injectedMemData: relMems,
+      injectedLoreData: relLore,
     };
 
     const historyWithPlaceholder = [...history, placeholderMsg];
@@ -367,6 +399,8 @@ export default function App() {
       finishReason,
       injectedMems: relMems.length,
       injectedLore: relLore.length,
+      injectedMemData:  relMems,   // full arrays
+      injectedLoreData: relLore,
     };
 
     const finalHistory = [...history, finalMsg];
@@ -436,7 +470,14 @@ export default function App() {
   }
 
   function deleteMessage(index) {
-    const next = messages.filter((_, i) => i !== index);
+    let indicesToRemove =[index];
+    
+    // if message before this one is an implicit prompt, remove it too
+    if (index > 0 && messages[index-1]?.implicit){
+      indicesToRemove.push(index-1);
+    }
+    
+    const next = messages.filter((_, i) => !indicesToRemove.includes(i));
     updateActiveChat(chat => ({ ...chat, messages: next, updatedAt: new Date().toISOString() }));
   }
 
@@ -466,6 +507,11 @@ export default function App() {
     setPresets(next);
     setEditingPreset(null);
     setPresetDraft(null);
+
+    // Auto-apply if this is the active preset
+    if (draft.id === activePreset) {
+    applyPreset(draft);
+    }
   }
 
   async function deletePreset(id) {
@@ -554,6 +600,8 @@ export default function App() {
             messagesEndRef={messagesEndRef}
 
             config={config}
+            onInjectionHover={showInjectionPanel}
+            onInjectionLeave={hideInjectionPanel}
           />
         )}
 
@@ -620,6 +668,13 @@ export default function App() {
         )}
 
       </div>
+      <InjectionPanel
+        visible={injectionPanel.visible}
+        memData={injectionPanel.memData}
+        loreData={injectionPanel.loreData}
+        onMouseEnter={keepPanelOpen}
+        onMouseLeave={hideInjectionPanel}
+      />
     </div>
   );
 }

@@ -7,7 +7,7 @@ export default function Memory({memories, memoryLog, config, addManualMemory, up
               <button onClick={() => { const el = document.getElementById("manualMem"); if (el?.value.trim()) { addManualMemory(el.value.trim()); el.value = ""; } }} style={{ ...inputStyle, cursor: "pointer", alignSelf: "flex-end", whiteSpace: "nowrap" }}>Add memory</button>
             </div>
             {memoryLog.length > 0 && (
-              <div style={{ ...inputStyle, fontSize: 11, fontFamily: "var(--font-mono)", maxHeight: 88, overflowY: "auto", lineHeight: 1.6 }}>
+              <div style={{ ...inputStyle, fontSize: 11, fontFamily: "var(--font-mono)", minHeight: 65, maxHeight: 95, overflowY: "auto", lineHeight: 1.6 }}>
                 {memoryLog.map((l, i) => <div key={i}>{l}</div>)}
               </div>
             )}

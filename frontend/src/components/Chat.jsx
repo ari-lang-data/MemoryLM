@@ -6,6 +6,7 @@ import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
+import InjectionPanel from "./InjectionPanel";
 
 export default function Chat({chats,
         activeChatId,
@@ -29,7 +30,9 @@ export default function Chat({chats,
         deleteMessage,
 
         messagesEndRef,
-        config
+        config,
+        onInjectionHover,
+        onInjectionLeave
         }){
 
           const lastMsg         = messages[messages.length - 1];
@@ -53,6 +56,7 @@ export default function Chat({chats,
                 </div>
               )}
               {messages
+                .map((m, originalIndex) => ({...m, originalIndex})) 
                 .filter(m => !m.implicit)
                 .map((m, i) => (
                   <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start", width: "100%" }}>
@@ -66,7 +70,7 @@ export default function Chat({chats,
                         </div>
                       </details>
                     )}
-                    {editingMessage?.index === i ? (
+                    {editingMessage?.index === m.originalIndex ? (
                       <div style={{ maxWidth: 680, width: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
                         <textarea
                           value={editingMessage.draft}
@@ -75,7 +79,7 @@ export default function Chat({chats,
                           style={{ resize: "vertical", minHeight: 80, padding: "10px 12px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-primary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", fontSize: 14, fontFamily: "var(--font-sans)", lineHeight: 1.5 }}
                         />
                         <div style={{ display: "flex", gap: 6, justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-                          <button onClick={() => { editMessage(i, editingMessage.draft); setEditingMessage(null); }} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "4px 10px" }}>Save</button>
+                          <button onClick={() => { editMessage(m.originalIndex, editingMessage.draft); setEditingMessage(null); }} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "4px 10px" }}>Save</button>
                           <button onClick={() => setEditingMessage(null)} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "4px 10px" }}>Cancel</button>
                         </div>
                       </div>
@@ -113,11 +117,15 @@ export default function Chat({chats,
                         <div style={{ display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}
                           onMouseEnter={e => e.currentTarget.style.opacity = 1}
                           onMouseLeave={e => e.currentTarget.style.opacity = 0}>
-                          <button onClick={() => setEditingMessage({ index: i, draft: m.content })} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }} title="Edit">✎</button>
-                          <button onClick={() => { if (confirm("Delete this message?")) deleteMessage(i); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14, padding: "2px 4px" }} title="Delete">×</button>
+                          <button onClick={() => setEditingMessage({ index: m.originalIndex, draft: m.content })} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }} title="Edit">✎</button>
+                          <button onClick={() => { if (confirm("Delete this message?")) deleteMessage(m.originalIndex); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14, padding: "2px 4px" }} title="Delete">×</button>
                         </div>
                         {(m.injectedMems > 0 || m.injectedLore > 0) && (
-                          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                          <span
+                            onMouseEnter={() => onInjectionHover(m.injectedMemData ?? [], m.injectedLoreData ?? [])}
+                            onMouseLeave={onInjectionLeave}
+                            style={{ fontSize: 11, color: "var(--color-text-tertiary)", cursor: "default" }}
+                          >
                             {[m.injectedMems > 0 && `${m.injectedMems} mem`, m.injectedLore > 0 && `${m.injectedLore} lore`].filter(Boolean).join(" · ")} injected
                           </span>
                         )}
@@ -125,9 +133,6 @@ export default function Chat({chats,
                     )}
                   </div>
                 ))}
-              {loading && messages[messages.length - 1]?.content === "" && (
-                <div style={{ alignSelf: "flex-start", padding: "10px 16px", borderRadius: "var(--border-radius-lg)", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 18, color: "var(--color-text-tertiary)", letterSpacing: 4 }}>···</div>
-              )}
               <div ref={messagesEndRef} />
             </div>
 
@@ -144,7 +149,7 @@ export default function Chat({chats,
                 <button
                   onClick={sendMessage}
                   disabled={loading || (!input.trim() && !showContinuation)}
-                  title="Send"
+                  title={showContinuation && !input.trim() ? "Continue" : "Send"}
                   style={{ padding: "9px 14px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: loading || !input.trim() ? "transparent": "var(--color-send-button)", cursor: loading || (!input.trim() && !showContinuation) ? "not-allowed" : "pointer", color: "var(--color-text-primary)", fontSize: 16, opacity: loading || (!input.trim() && !showContinuation) ? 0.35 : 1 }}
                 >
                   {showContinuation && !input.trim() ? "▶▶" : "↑"}

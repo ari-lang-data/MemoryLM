@@ -24,7 +24,7 @@ export const chatsAPI = {
 // ─── Memories ─────────────────────────────────────────────────────────────────
 export const memoriesAPI = {
   add:          (memory)              => request("POST",   "/memories/",              memory),
-  query:        (chat_id, embedding, n_results, threshold) => request("POST",   "/memories/query",         { chat_id, embedding, n_results, threshold }),
+  query:        (chat_id, embedding, n_results, threshold, alpha, decay_rate) => request("POST",   "/memories/query",         { chat_id, embedding, n_results, threshold, alpha, decay_rate }),
   update:       (id, summary, embedding, timestamp) => request("PUT",    `/memories/${id}`,         { summary, embedding, timestamp }),
   delete:       (id)                  => request("DELETE", `/memories/${id}`),
   clearChat:    (chat_id)             => request("DELETE", `/memories/chat/${chat_id}`),

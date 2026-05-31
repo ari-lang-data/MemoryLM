@@ -92,7 +92,7 @@ export default function ChatSidebar({
           flexDirection: "column",
           zIndex:     100,
           transform:  isOpen ? "translateX(0)" : "translateX(-100%)",
-          transition: "transform 0.2s ease",
+          transition: "transform 0.5s ease",
           boxShadow:  isOpen ? "4px 0 24px rgba(0,0,0,0.3)" : "none",
         }}
       >
