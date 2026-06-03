@@ -28,3 +28,9 @@ def get_lorebook_collection() -> Collection:
         name="lorebook",
         metadata={"hnsw:space": "cosine"}
     )
+
+def get_clusters_collection() -> Collection:
+    return get_client().get_or_create_collection(
+        name="memory_clusters",
+        metadata={"hnsw:space": "cosine"}
+    )

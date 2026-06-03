@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from database.chroma import get_lorebook_collection
 from models.schemas import LorebookAdd, LorebookUpdate, LorebookQuery, SuccessResponse
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -45,6 +46,7 @@ def query_lorebook(body: LorebookQuery):
                 "score":   round(similarity, 4),
                 **meta
             })
+            print(f"Lorebook query threshold: {body.threshold}")
     return hits
 
 @router.put("/{entry_id}", response_model=SuccessResponse)
@@ -79,6 +81,37 @@ def delete_entry(entry_id: str):
 def get_all():
     col = get_lorebook_collection()
     results = col.get(include=["documents", "metadatas"])
+    return [
+        {"id": id, "content": doc, **meta}
+        for id, doc, meta in zip(
+            results["ids"],
+            results["documents"] or [],
+            results["metadatas"] or []
+        )
+    ]
+
+class LorebookPin(BaseModel):
+    pinned: bool
+
+@router.patch("/{entry_id}/pin", response_model=SuccessResponse)
+def pin_entry(entry_id: str, body: LorebookPin):
+    col      = get_lorebook_collection()
+    existing = col.get(ids=[entry_id], include=["metadatas", "documents", "embeddings"])
+    if not existing["ids"]:
+        raise HTTPException(status_code=404, detail="Lorebook entry not found")
+    col.update(
+        ids=[entry_id],
+        metadatas=[{ **(existing["metadatas"] or [[]])[0], "pinned": body.pinned }]
+    )
+    return SuccessResponse()
+
+@router.get("/pinned")
+def get_pinned_lorebook():
+    col     = get_lorebook_collection()
+    results = col.get(
+        where={"pinned": True},
+        include=["documents", "metadatas"]
+    )
     return [
         {"id": id, "content": doc, **meta}
         for id, doc, meta in zip(

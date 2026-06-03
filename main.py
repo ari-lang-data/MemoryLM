@@ -1,14 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database.sqlite import init_db
-from routers import memories, lorebook, chats, presets, messages
 from dotenv import load_dotenv
 import os
+from routers import memories, lorebook, chats, presets, messages, clusters
+
 load_dotenv()
 
 app = FastAPI(title="MemoryLM Backend")
 
 app.include_router(messages.router, prefix="/messages", tags=["messages"])
+app.include_router(clusters.router, prefix="/clusters", tags=["clusters"])
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(

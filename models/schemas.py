@@ -4,18 +4,22 @@ from typing import Optional
 # ─── Memories ─────────────────────────────────────────────────────────────────
 
 class MemoryAdd(BaseModel):
-    id: str
-    chat_id: str
-    summary: str
-    embedding: list[float]
-    source: str                  # "auto" | "manual"
-    timestamp: str
-    turns: int = 0
+    id:              str
+    chat_id:         str
+    summary:         str
+    embedding:       list[float]
+    source:          str
+    timestamp:       str
+    turns:           int = 0
+    pinned:          bool = False
+    retrieval_count: int = 0
+    last_retrieved:  str = ""
 
 class MemoryUpdate(BaseModel):
-    summary: str
+    summary:   str
     embedding: list[float]
     timestamp: str
+    pinned:    bool = False
 
 class MemoryQuery(BaseModel):
     chat_id:   str
@@ -24,6 +28,13 @@ class MemoryQuery(BaseModel):
     threshold: float = 0.35
     alpha:     float = 0.7
     decay_rate: float = 0.01
+
+class ClusterAssign(BaseModel):
+    memory_id:    str
+    chat_id:      str
+    embedding:    list[float]
+    summary:      str
+    threshold:    float = 0.75  # higher than retrieval — only cluster truly similar memories
 
 # ─── Lorebook ─────────────────────────────────────────────────────────────────
 
@@ -35,6 +46,7 @@ class LorebookAdd(BaseModel):
     content: str
     embedding: list[float]
     timestamp: str
+    pinned:    bool = False
 
 class LorebookUpdate(BaseModel):
     title: str
@@ -43,6 +55,7 @@ class LorebookUpdate(BaseModel):
     content: str
     embedding: list[float]
     timestamp: str
+    pinned:    bool = False
 
 class LorebookQuery(BaseModel):
     embedding: list[float]
@@ -90,6 +103,7 @@ class PresetConfig(BaseModel):
     # Narrative continuation
     style: str = "none"          # "none" | "creative" | "roleplay" | "technical"
     continuationPrompt: str = "Advance the narrative."
+    branchMode: str = "inline"  # "inline" | "fork"
 
 class PresetSave(BaseModel):
     id: str
