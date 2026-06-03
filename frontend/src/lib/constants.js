@@ -25,7 +25,7 @@ export const DEFAULT_PRESETS = [
       chunkEvery: 6, topK: 3, threshold: 0.4, temperature: 0.5,
       autoSummarise: true, dedupMode: "discard", dedupThreshold: 0.85,
       modelName: "", alpha: 0.7, decayRate: 0.01,
-      style: "none", continuationPrompt: "Advance the narrative."
+      style: "none", continuationPrompt: "Advance the narrative.", branchMode: "replace", contextWindow: 10
     },
   },
   {
@@ -37,7 +37,7 @@ export const DEFAULT_PRESETS = [
       chunkEvery: 3, topK: 6, threshold: 0.3, temperature: 0.7,
       repetitionPenalty: 1.1, autoSummarise: true, dedupMode: "merge",
       dedupThreshold: 0.88, modelName: "", alpha: 0.5, decayRate: 0.005,
-      style: "creative", continuationPrompt: "Advance the narrative."
+      style: "creative", continuationPrompt: "Advance the narrative.", branchMode: "inline", contextWindow: 20
     },
   },
   {
@@ -49,7 +49,7 @@ export const DEFAULT_PRESETS = [
       chunkEvery: 8, topK: 2, threshold: 0.5, temperature: 0.5,
       repetitionPenalty: 1.1, autoSummarise: true, dedupMode: "discard",
       dedupThreshold: 0.9, modelName: "", alpha: 0.8, decayRate: 0.02,
-      style: "technical", continuationPrompt: "Continue."
+      style: "technical", continuationPrompt: "Continue.", branchMode: "replace", contextWindow: 6
     },
   },
 ];

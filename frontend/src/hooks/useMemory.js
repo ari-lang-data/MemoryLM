@@ -71,6 +71,15 @@ export default function useMemory({ configRef, lmUrlRef, activeChatId, addLog, s
         dedup.mergedVec,
         new Date().toISOString()
       );
+
+      await clustersAPI.assign(
+        dedup.replaceId,
+        activeChatId,
+        dedup.mergedVec,
+        dedup.merged,
+        0.75
+      );
+      
       const updated = await memoriesAPI.getByChat(activeChatId);
       setMemories(updated);
       addLog(`Dedup: updated memory #${dedup.replaceId}`);
@@ -87,6 +96,13 @@ export default function useMemory({ configRef, lmUrlRef, activeChatId, addLog, s
       turns:     turns.length,
     };
     await memoriesAPI.add(entry);
+    await clustersAPI.assign(
+      entry.id,
+      activeChatId,
+      vec,
+      summary,
+      0.75  // cluster threshold
+    );
     const updated = await memoriesAPI.getByChat(activeChatId);
     setMemories(updated);
     addLog(`Auto-summarised ${turns.length} turns → stored #${entry.id}`);

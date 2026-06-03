@@ -32,7 +32,14 @@ export default function Chat({chats,
         messagesEndRef,
         config,
         onInjectionHover,
-        onInjectionLeave
+        onInjectionLeave,
+        
+        nodes,
+        activeChildren,
+        switchBranch,
+        forkChat,
+        branchMode,
+        getSiblings,
         }){
 
           const lastMsg         = messages[messages.length - 1];
@@ -45,6 +52,17 @@ export default function Chat({chats,
               style === "roleplay" ||
               (style === "technical" && lastFinishReason === "length")
             );
+          function getBranchInfo(nodeId) {
+            const siblings = getSiblings(nodes, nodeId);
+            if (siblings.length <= 1) return null;
+            const currentId = activeChildren[nodeId] ?? siblings[0].id;
+            const currentIndex = siblings.findIndex(s => s.id === currentId);
+            return {
+              total:        siblings.length,
+              currentIndex: currentIndex + 1,
+              parentId:     nodeId,
+            };
+          }
     return(
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", width: "100%", maxWidth: 800 }}>
 
@@ -56,83 +74,124 @@ export default function Chat({chats,
                 </div>
               )}
               {messages
-                .map((m, originalIndex) => ({...m, originalIndex})) 
+                .map((m, originalIndex) => ({ ...m, originalIndex }))
                 .filter(m => !m.implicit)
-                .map((m, i) => (
-                  <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start", width: "100%" }}>
-                    {m.reasoning && (
-                      <details style={{ maxWidth: 680, marginBottom: 4 }}>
-                        <summary style={{ fontSize: 11, color: "var(--color-text-tertiary)", cursor: "pointer", userSelect: "none" }}>
-                          reasoning
-                        </summary>
-                        <div style={{ marginTop: 6, padding: "8px 12px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 12, color: "var(--color-text-tertiary)", lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}>
-                          {m.reasoning}
-                        </div>
-                      </details>
-                    )}
-                    {editingMessage?.index === m.originalIndex ? (
-                      <div style={{ maxWidth: 680, width: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
-                        <textarea
-                          value={editingMessage.draft}
-                          onChange={e => setEditingMessage(em => ({ ...em, draft: e.target.value }))}
-                          autoFocus
-                          style={{ resize: "vertical", minHeight: 80, padding: "10px 12px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-primary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", fontSize: 14, fontFamily: "var(--font-sans)", lineHeight: 1.5 }}
-                        />
-                        <div style={{ display: "flex", gap: 6, justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-                          <button onClick={() => { editMessage(m.originalIndex, editingMessage.draft); setEditingMessage(null); }} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "4px 10px" }}>Save</button>
-                          <button onClick={() => setEditingMessage(null)} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "4px 10px" }}>Cancel</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ maxWidth: 680, display: "flex", flexDirection: "column", gap: 3, alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
-                        <div style={{ padding: "10px 14px", borderRadius: "var(--border-radius-lg)", background: m.role === "user" ? "var(--color-background-info)" : "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 14, lineHeight: 1.65, color: m.role === "user" ? "var(--color-text-info)" : "var(--color-text-primary)" }}>
-                          <ReactMarkdown
-                          remarkPlugins={[remarkMath]}
-                          rehypePlugins={[rehypeKatex]}
-                            components={{
-                              code({ node, inline, className, children, ...props }) {
-                                const match = /language-(\w+)/.exec(className || "");
-                                return !inline && match ? (
-                                  <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
-                                    {String(children).replace(/\n$/, "")}
-                                  </SyntaxHighlighter>
-                                ) : (
-                                  <code style={{ background: "var(--color-background-tertiary)", padding: "2px 6px", borderRadius: "var(--border-radius-sm)", fontSize: 13 }} {...props}>
-                                    {children}
-                                  </code>
-                                );
-                              },
-                              p({ children }) { return <p style={{ margin: "0 0 8px" }}>{children}</p>; },
-                              ul({ children }) { return <ul style={{ margin: "0 0 8px", paddingLeft: 20 }}>{children}</ul>; },
-                              ol({ children }) { return <ol style={{ margin: "0 0 8px", paddingLeft: 20 }}>{children}</ol>; },
-                              li({ children }) { return <li style={{ marginBottom: 4 }}>{children}</li>; },
-                              h1({ children }) { return <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>{children}</h1>; },
-                              h2({ children }) { return <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 8px" }}>{children}</h2>; },
-                              h3({ children }) { return <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 8px" }}>{children}</h3>; },
-                            }}
-                          >
-                            {m.content}
-                          </ReactMarkdown>
-                        </div>
-                        <div style={{ display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}
-                          onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                          onMouseLeave={e => e.currentTarget.style.opacity = 0}>
-                          <button onClick={() => setEditingMessage({ index: m.originalIndex, draft: m.content })} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }} title="Edit">✎</button>
-                          <button onClick={() => { if (confirm("Delete this message?")) deleteMessage(m.originalIndex); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14, padding: "2px 4px" }} title="Delete">×</button>
-                        </div>
-                        {(m.injectedMems > 0 || m.injectedLore > 0) && (
-                          <span
-                            onMouseEnter={() => onInjectionHover(m.injectedMemData ?? [], m.injectedLoreData ?? [])}
-                            onMouseLeave={onInjectionLeave}
-                            style={{ fontSize: 11, color: "var(--color-text-tertiary)", cursor: "default" }}
-                          >
-                            {[m.injectedMems > 0 && `${m.injectedMems} mem`, m.injectedLore > 0 && `${m.injectedLore} lore`].filter(Boolean).join(" · ")} injected
+                .map((m, i) => {
+                  const branchInfo = m.parentId ? getBranchInfo(m.parentId) : null;
+                  return (
+                    <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start", width: "100%" }}>
+
+                      {/* Branch navigator — shown at fork points */}
+                      {branchInfo && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, alignSelf: "flex-start" }}>
+                          <button
+                            onClick={() => switchBranch(branchInfo.parentId, -1)}
+                            style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}
+                          >‹</button>
+                          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                            {branchInfo.currentIndex}/{branchInfo.total}
                           </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                          <button
+                            onClick={() => switchBranch(branchInfo.parentId, 1)}
+                            style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}
+                          >›</button>
+                        </div>
+                      )}
+
+                      {/* Reasoning block */}
+                      {m.reasoning && (
+                        <details style={{ maxWidth: 680, marginBottom: 4 }}>
+                          <summary style={{ fontSize: 11, color: "var(--color-text-tertiary)", cursor: "pointer", userSelect: "none" }}>
+                            reasoning
+                          </summary>
+                          <div style={{ marginTop: 6, padding: "8px 12px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 12, color: "var(--color-text-tertiary)", lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}>
+                            {m.reasoning}
+                          </div>
+                        </details>
+                      )}
+
+                      {editingMessage?.index === m.originalIndex ? (
+                        <div style={{ maxWidth: 680, width: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
+                          <textarea
+                            value={editingMessage.draft}
+                            onChange={e => setEditingMessage(em => ({ ...em, draft: e.target.value }))}
+                            autoFocus
+                            style={{ resize: "vertical", minHeight: 80, padding: "10px 12px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-primary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", fontSize: 14, fontFamily: "var(--font-sans)", lineHeight: 1.5 }}
+                          />
+                          <div style={{ display: "flex", gap: 6, justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                            <button onClick={() => { editMessage(m.id, editingMessage.draft); setEditingMessage(null); }} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "4px 10px" }}>Save</button>
+                            <button onClick={() => setEditingMessage(null)} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "4px 10px" }}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ maxWidth: 680, display: "flex", flexDirection: "column", gap: 3, alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
+                          <div style={{ padding: "10px 14px", borderRadius: "var(--border-radius-lg)", background: m.role === "user" ? "var(--color-background-info)" : "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 14, lineHeight: 1.65, color: m.role === "user" ? "var(--color-text-info)" : "var(--color-text-primary)" }}>
+                            <ReactMarkdown
+                              remarkPlugins={[remarkMath]}
+                              rehypePlugins={[rehypeKatex]}
+                              components={{
+                                code({ node, inline, className, children, ...props }) {
+                                  const match = /language-(\w+)/.exec(className || "");
+                                  return !inline && match ? (
+                                    <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
+                                      {String(children).replace(/\n$/, "")}
+                                    </SyntaxHighlighter>
+                                  ) : (
+                                    <code style={{ background: "var(--color-background-tertiary)", padding: "2px 6px", borderRadius: "var(--border-radius-sm)", fontSize: 13 }} {...props}>
+                                      {children}
+                                    </code>
+                                  );
+                                },
+                                p({ children }) { return <p style={{ margin: "0 0 8px" }}>{children}</p>; },
+                                ul({ children }) { return <ul style={{ margin: "0 0 8px", paddingLeft: 20 }}>{children}</ul>; },
+                                ol({ children }) { return <ol style={{ margin: "0 0 8px", paddingLeft: 20 }}>{children}</ol>; },
+                                li({ children }) { return <li style={{ marginBottom: 4 }}>{children}</li>; },
+                                h1({ children }) { return <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>{children}</h1>; },
+                                h2({ children }) { return <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 8px" }}>{children}</h2>; },
+                                h3({ children }) { return <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 8px" }}>{children}</h3>; },
+                              }}
+                            >
+                              {m.content}
+                            </ReactMarkdown>
+                          </div>
+
+                          {/* Action buttons */}
+                          <div style={{ display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}
+                            onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                            onMouseLeave={e => e.currentTarget.style.opacity = 0}>
+                            <button
+                              onClick={() => setEditingMessage({ index: m.originalIndex, draft: m.content })}
+                              style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}
+                              title="Edit"
+                            >✎</button>
+                            {m.role === "assistant" && (
+                                <button
+                                  onClick={() => forkChat(m.id)}
+                                  style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}
+                                  title="Fork to new chat"
+                                >⎇</button>
+                            )}
+                            <button
+                              onClick={() => { if (confirm("Delete this message?")) deleteMessage(m.id); }}
+                              style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14, padding: "2px 4px" }}
+                              title="Delete"
+                            >×</button>
+                          </div>
+
+                          {(m.injectedMems > 0 || m.injectedLore > 0) && (
+                            <span
+                              onMouseEnter={() => onInjectionHover(m.injectedMemData ?? [], m.injectedLoreData ?? [])}
+                              onMouseLeave={onInjectionLeave}
+                              style={{ fontSize: 11, color: "var(--color-text-tertiary)", cursor: "default" }}
+                            >
+                              {[m.injectedMems > 0 && `${m.injectedMems} mem`, m.injectedLore > 0 && `${m.injectedLore} lore`].filter(Boolean).join(" · ")} injected
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               <div ref={messagesEndRef} />
             </div>
 

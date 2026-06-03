@@ -35,8 +35,8 @@ export default function InjectionPanel({ memData = [], loreData = [], visible, o
           <p style={{ margin: 0, fontSize: 11, color: "var(--color-text-tertiary)", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Memories</p>
           {memData.map((m, i) => (
             <div key={i} style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "8px 10px", border: "0.5px solid var(--color-border-tertiary)" }}>
-              <p style={{ margin: "0 0 4px", fontSize: 12, lineHeight: 1.55, color: "var(--color-text-primary)" }}>{m.summary}</p>
-              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>score {m.score?.toFixed(3)}</span>
+              <p style={{ margin: "0 0 4px", fontSize: 12, lineHeight: 1.55, color: "var(--color-text-primary)" }}>{m.summary?.slice(0, 400)}{m.summary?.length > 400 ? "…" : ""}</p>
+              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{m.pinned ? "pinned" : `score ${m.score?.toFixed(3)}`}</span>
             </div>
           ))}
         </div>
@@ -52,7 +52,7 @@ export default function InjectionPanel({ memData = [], loreData = [], visible, o
                 <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{l.title}</span>
               </div>
               <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{l.content?.slice(0, 120)}{l.content?.length > 120 ? "…" : ""}</p>
-              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>score {l.score?.toFixed(3)}</span>
+              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{l.pinned ? "pinned" : `score ${l.score?.toFixed(3)}`}</span>
             </div>
           ))}
         </div>

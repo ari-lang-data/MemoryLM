@@ -1,14 +1,14 @@
 import{inputStyle, STORAGE_KEYS} from "../lib/constants";
 import {saveStorage} from "../lib/storage";
 import {Card} from "./ui/shared";
-export default function Lorebook({lorebook,lorebookDraft,editingLore, setEditingLore, TYPE_COLORS,LORE_TYPES, setLorebookDraft, addLorebookEntry, deleteLorebookEntry}){
+export default function Lorebook({lorebook,lorebookDraft,editingLore, setEditingLore, TYPE_COLORS,LORE_TYPES, setLorebookDraft, addLorebookEntry, deleteLorebookEntry, toggleLorePin}){
     return(
         <div style={{ flex: 1, display: "flex", overflow: "hidden", width: "100%", maxWidth: 800 }}>
             <div style={{ flex: 1, overflowY: "auto", padding: 16, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column", gap: 10 }}>
               {lorebook.length === 0
                 ? <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 13, padding: 32 }}>No lorebook entries yet. Add characters, locations, factions, world rules…</div>
                 : lorebook.slice().reverse().map(e => (
-                  <Card key={e.id}>
+                  <Card key={e.id} style={{ borderLeft: e.pinned ? "2px solid var(--color-text-info)" : undefined }}>
                     <div style={{ display: "flex", gap: 8 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -24,6 +24,11 @@ export default function Lorebook({lorebook,lorebookDraft,editingLore, setEditing
                           onClick={() => deleteLorebookEntry(e.id)}
                           style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 17 }}
                         >×</button>
+                        <button
+                          onClick={() => toggleLorePin(e.id, !e.pinned)}
+                          style={{ background: "transparent", border: "none", cursor: "pointer", color: e.pinned ? "var(--color-text-info)" : "var(--color-text-tertiary)", fontSize: 14 }}
+                          title={e.pinned ? "Unpin" : "Pin — always inject"}
+                        >📌</button>
                       </div>
                     </div>
                   </Card>

@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI } from "./lib/api";
+import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI } from "./lib/api";
 
 import useEmbedder from "./hooks/useEmbedder";
 import {parseReasoning} from "./lib/parseReasoning";
+import {getActivePath, getSiblings} from "./lib/branching";
+import { getRetrievalProfile } from "./lib/retrievalClassifier";
+
 // ── LM fetch ────────────────────────────────────────────────────────────────
 import {lmFetch} from "./lib/lmFetch";
 
@@ -58,7 +61,8 @@ export default function App() {
   const [lmStudioUrl,    setLmStudioUrl]    = useState(DEFAULT_LM_STUDIO_URL);
   const [config, setConfig] = useState({
     chunkEvery: 4, topK: 4, threshold: 0.35, temperature: 0.7, repetitionPenalty: 1.0,
-    autoSummarise: true, dedupMode: "merge", dedupThreshold: DEDUP_THRESHOLD, modelName: "",
+    autoSummarise: true, dedupMode: "merge", dedupThreshold: DEDUP_THRESHOLD, modelName: "", alpha: 0.7, decayRate: 0.01,
+    style: "none", continuationPrompt: "Advance the narrative.", branchMode: "replace", contextWindow: 10,
   });
 
   const turnsSinceChunk = useRef(0);
@@ -67,9 +71,11 @@ export default function App() {
   const lmUrlRef        = useRef(lmStudioUrl);
 
   const activeChat = chats.find(c => c.id === activeChatId)?? chats[0];
-  const messages   = activeChat?.messages ?? [];
+  const [nodes,          setNodes]          = useState([]);
+  const [activeChildren, setActiveChildren] = useState({});
   const [injectionPanel, setInjectionPanel] = useState({ visible: false, memData: [], loreData: [] });
   const hoverTimerRef = useRef(null);
+  const messages = getActivePath(nodes, activeChildren)
 
   useEffect(() => { configRef.current  = config;      }, [config]);
   useEffect(() => { lmUrlRef.current   = lmStudioUrl; }, [lmStudioUrl]);
@@ -78,6 +84,10 @@ export default function App() {
     if (!activeChatId) return;
     memoriesAPI.getByChat(activeChatId).then(setMemories).catch(console.error);
   }, [activeChatId]);
+  useEffect(() => {
+    if (!activeChatId || nodes.length === 0) return;
+    messagesAPI.save(activeChatId, nodes, activeChildren).catch(console.error);
+  }, [nodes, activeChildren, activeChatId]);
 
   // ── Boot ────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -126,6 +136,12 @@ export default function App() {
           if (savedCfg.systemPrompt) setSystemPrompt(savedCfg.systemPrompt);
           if (savedCfg.lmStudioUrl)  setLmStudioUrl(savedCfg.lmStudioUrl);
         }
+
+        const savedMsgs = await messagesAPI.get(savedActiveChat ?? savedChats[0].id);
+        if (savedMsgs) {
+          setNodes(savedMsgs.nodes ?? []);
+          setActiveChildren(savedMsgs.activeChildren ?? {});
+        }
       } catch(e) {
         console.error("Boot error:", e);
       }
@@ -138,18 +154,30 @@ export default function App() {
   }
 
   // ── Chat management ─────────────────────────────────────────────────────────
-  function updateActiveChat(updater, force = false) {
-    setChats(prev => {
-      const next = prev.map(chat => {
-        if (chat.id !== activeChatId) return chat;
-        const updated = updater(chat);
-        const existingMessages = chat.messages ?? [];
-        const messagesToSave = force || updated.messages?.length > 0
-          ? updated.messages
-          : existingMessages;
-        messagesAPI.save(activeChatId, messagesToSave).catch(console.error);
-        return { ...updated, messages: messagesToSave };
-      });
+  function addNode(node) {
+    setNodes(prev => {
+      const next = [...prev, node];
+      return next;
+    });
+  }
+
+  function updateNode(id, updater) {
+    setNodes(prev => {
+      const next = prev.map(n => n.id === id ? updater(n) : n);
+      return next;
+    });
+  }
+
+  function removeNode(id) {
+    setNodes(prev => {
+      const next = prev.filter(n => n.id !== id);
+      return next;
+    });
+  }
+
+  function setActiveChild(parentId, childId) {
+    setActiveChildren(prev => {
+      const next = { ...prev, [parentId]: childId };
       return next;
     });
   }
@@ -168,9 +196,12 @@ export default function App() {
     saveStorage(`mem_messages_${newChat.id}`, []);
   }
 
-  function switchChat(id) {
+  async function switchChat(id) {// for inline branching
     setActiveChatId(id);
     saveStorage(STORAGE_KEYS.activeChat, id);
+    const savedMsgs = await messagesAPI.get(id);
+    setNodes(savedMsgs?.nodes ?? []);
+    setActiveChildren(savedMsgs?.activeChildren ?? {});
   }
 
   async function deleteChat(id) {
@@ -290,6 +321,11 @@ export default function App() {
       ?.slice(0, 60);
   }
 
+  async function toggleMemoryPin(id, pinned) {
+    await memoriesAPI.pin(id, pinned);
+    setMemories(prev => prev.map(m => m.id === id ? { ...m, pinned } : m));
+  }
+
   // ── Lorebook ────────────────────────────────────────────────────────────────
   async function addLorebookEntry(draft) {
   // Embed only title + tags for better retrieval matching
@@ -321,31 +357,102 @@ export default function App() {
     setLorebook(prev => prev.filter(e => e.id !== id));
   }
 
+  async function toggleLorePin(id, pinned) {
+    await lorebookAPI.pin(id, pinned);
+    setLorebook(prev => prev.map(e => e.id === id ? { ...e, pinned } : e));
+  }
+
   // ── Log ─────────────────────────────────────────────────────────────────────
   function addLog(msg) {
     setMemoryLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev.slice(0, 49)]);
   }
 
-  // ── Send / Regenerate ───────────────────────────────────────────────────────
-  async function sendMessageWith(history) {
-    const cfg      = configRef.current;
+  // ── Chat Management ───────────────────────────────────────────────────────
+  async function sendMessageWith(history, parentId) {
+    const cfg = configRef.current;
     const last     = history[history.length - 1];
+    const window = cfg.contextWindow ?? 0;
+    const windowedHistory = window > 0
+      ? history.slice(-window * 2)  // *2 because each turn is user+assistant
+      : history;
+
     const queryContent = last.implicit
-    ? history
-        .filter(m => !m.implicit)
-        .slice(-3)
-        .map(m => m.content)
-        .join(" ")
-    : last.content;
+      ? history.filter(m => !m.implicit).slice(-3).map(m => m.content).join(" ")
+      : last.content;
 
-  const queryVec = await embed(queryContent);
+    const queryVec = await embed(queryContent);
 
-    const relMems = queryVec
-      ? await memoriesAPI.query(activeChatId, queryVec, cfg.topK, cfg.threshold, cfg.alpha ?? 0.7, cfg.decayRate ?? 0.01)
+    // Get retrieval profile based on context
+    const profile = getRetrievalProfile(
+      { content: queryContent },
+      cfg.style ?? "none",
+      { alpha: cfg.alpha, decayRate: cfg.decayRate }
+    );
+
+    addLog(`Retrieval context: ${profile.context}`);
+
+    // Pinned items — always injected
+    const [pinnedMems, pinnedLore] = await Promise.all([
+      memoriesAPI.getPinned(activeChatId),
+      lorebookAPI.getPinned(),
+    ]);
+
+    // Dynamic retrieval using profile
+    let retrievedMems = [];
+    if (queryVec) {
+      const clusterHits = await clustersAPI.query(
+        activeChatId, queryVec, profile.topK, profile.threshold
+      );
+
+      if (clusterHits.length > 0) {
+        // Get best memory from each cluster
+        const allMemberIds = clusterHits.flatMap(c => c.members);
+        const allMemories  = await memoriesAPI.getByChat(activeChatId);
+        const byId         = Object.fromEntries(allMemories.map(m => [m.id, m]));
+
+        // For each cluster pick the member with highest importance + recency
+        retrievedMems = clusterHits
+          .map(cluster => {
+            const members = cluster.members
+              .map(id => byId[id])
+              .filter(Boolean)
+              .sort((a, b) => (b.retrieval_count ?? 0) - (a.retrieval_count ?? 0));
+            return members[0];
+          })
+          .filter(Boolean)
+          .slice(0, profile.topK);
+      } else {
+        // Fall back to direct retrieval if no clusters exist yet
+        retrievedMems = await memoriesAPI.query(
+          activeChatId, queryVec,
+          profile.topK, profile.threshold,
+          profile.alpha, profile.decayRate
+        );
+      }
+    }
+
+    const retrievedLore = queryVec
+      ? await lorebookAPI.query(queryVec, profile.topK, profile.lorebookThreshold ?? profile.threshold)
       : [];
-    const relLore = queryVec
-      ? await lorebookAPI.query(queryVec, cfg.topK, cfg.threshold)
-      : [];
+
+    // Merge pinned + retrieved, deduplicate by ID
+    const pinnedMemIds  = new Set(pinnedMems.map(m => m.id));
+    const pinnedLoreIds = new Set(pinnedLore.map(l => l.id));
+
+    const relMems = [
+      ...pinnedMems,
+      ...retrievedMems.filter(m => !pinnedMemIds.has(m.id)),
+    ];
+    const relLore = [
+      ...pinnedLore,
+      ...retrievedLore.filter(l => !pinnedLoreIds.has(l.id)),
+    ];
+
+    // After merging pinned + retrieved:
+    const now = new Date().toISOString();
+    retrievedMems.forEach(m => {
+      memoriesAPI.markRetrieved(m.id, now).catch(console.error);
+    });
 
     let injected = systemPrompt;
     if (relMems.length > 0)
@@ -353,79 +460,60 @@ export default function App() {
     if (relLore.length > 0)
       injected += `\n\n[LOREBOOK — world/character context]\n${relLore.map(l => `[${(l.type ?? "ENTRY").toUpperCase()}] ${l.title}: ${l.content}`).join("\n")}`;
     if (relMems.length + relLore.length > 0)
-      addLog(`Injected ${relMems.length} mem + ${relLore.length} lore`);
-
-    // Create placeholder message immediately
-    const placeholderMsg = {
-      role:         "assistant",
-      content:      "",
-      finishReason: "stop",
-      reasoning:    null,
-      injectedMems: relMems.length,
-      injectedLore: relLore.length,
-      injectedMemData: relMems,
-      injectedLoreData: relLore,
+      addLog(`Injected ${relMems.length} mem (${pinnedMems.length} pinned) + ${relLore.length} lore (${pinnedLore.length} pinned)`);
+    // Placeholder node
+    const placeholderId = `msg_${Date.now()}`;
+    const placeholder   = {
+      id: placeholderId, parentId,
+      role: "assistant", content: "",
+      finishReason: "stop", reasoning: null,
+      injectedMems: relMems.length, injectedLore: relLore.length,
+      injectedMemData: relMems, injectedLoreData: relLore,
+      implicit: false, timestamp: new Date().toISOString(),
     };
 
-    const historyWithPlaceholder = [...history, placeholderMsg];
-    updateActiveChat(chat => ({ ...chat, messages: historyWithPlaceholder, updatedAt: new Date().toISOString() }));
+    addNode(placeholder);
+    setActiveChildren(prev => ({ ...prev, [parentId]: placeholderId }));
 
-    // Stream — update placeholder in place as chunks arrive
     const { content: rawReply, finishReason } = await lmFetch(
-      history.map(m => ({ role: m.role, content: m.content })),
+      windowedHistory.map(m => ({ role: m.role, content: m.content })),
       injected,
       configRef,
       lmUrlRef,
       (accumulated) => {
-        updateActiveChat(chat => ({
-          ...chat,
-          messages: chat.messages.map((m, i) =>
-            i === chat.messages.length - 1
-              ? { ...m, content: accumulated }
-              : m
-          ),
-          updatedAt: new Date().toISOString(),
-        }));
+        updateNode(placeholderId, n => ({ ...n, content: accumulated }));
       }
     );
 
     const { reasoning, content: reply } = parseReasoning(rawReply);
 
-    // Final update with complete content and metadata
-    const finalMsg = {
-      role:         "assistant",
+    updateNode(placeholderId, n => ({
+      ...n,
       content:      reply ?? "(no response)",
       reasoning,
       finishReason,
-      injectedMems: relMems.length,
-      injectedLore: relLore.length,
-      injectedMemData:  relMems,   // full arrays
-      injectedLoreData: relLore,
-    };
-
-    const finalHistory = [...history, finalMsg];
-    updateActiveChat(chat => ({
-      ...chat,
-      messages: finalHistory,
-      updatedAt: new Date().toISOString(),
     }));
 
-    // Save final messages
-    await messagesAPI.save(activeChatId, finalHistory);
+    // Save final state
+    const finalNodes = [...nodes, placeholder];
+    await messagesAPI.save(activeChatId, finalNodes, activeChildren);
 
-    // Auto-summarise
+    // Auto-summarise using active path
     turnsSinceChunk.current += 1;
     if (cfg.autoSummarise && turnsSinceChunk.current >= cfg.chunkEvery) {
       turnsSinceChunk.current = 0;
-      summariseAndStore(finalHistory.slice(-cfg.chunkEvery * 2));
+      const activePath = getActivePath(finalNodes, activeChildren);
+      summariseAndStore(activePath.slice(-cfg.chunkEvery * 2));
     }
 
     // Title generation
-    if (activeChat?.title === "New Chat" && finalHistory.length >= 2) {
+    if (activeChat?.title === "New Chat" && history.length >= 2) {
       try {
-        const newTitle = await generateChatTitle(finalHistory);
-        if (newTitle) await chatsAPI.update(activeChatId, newTitle, new Date().toISOString());
-        setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, title: newTitle || c.title } : c));
+        const newTitle = await generateChatTitle(history);
+        if (newTitle) {
+          await chatsAPI.update(activeChatId, newTitle, new Date().toISOString());
+          setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, title: newTitle } : c));
+        }
       } catch(e) { console.error("title gen failed", e); }
     }
   }
@@ -439,51 +527,178 @@ export default function App() {
 
     if (!isImplicitContinuation && !input.trim() || loading) return;
 
-    const content  = isImplicitContinuation
+    const content = isImplicitContinuation
       ? (cfg.continuationPrompt ?? "Advance the narrative.")
       : input.trim();
 
-    // Mark implicit continuations so they don't show in the chat UI
+    // Parent is either branchFrom or last message in active path
+    const lastMsg  = messages[messages.length - 1];
+    const parentId = lastMsg?.id ?? null;
+
     const userMsg = {
-      role:     "user",
+      id:        `msg_${Date.now()}`,
+      parentId,
+      role:      "user",
       content,
-      implicit: isImplicitContinuation,
+      implicit:  isImplicitContinuation,
+      timestamp: new Date().toISOString(),
+      finishReason: "stop",
+      reasoning: null,
+      injectedMems: 0, injectedLore: 0,
+      injectedMemData: [], injectedLoreData: [],
     };
 
-    const history = [...messages, userMsg];
-    updateActiveChat(chat => ({ ...chat, messages: history, updatedAt: new Date().toISOString() }));
+    if (parentId) {
+      setActiveChildren(prev => ({ ...prev, [parentId]: userMsg.id }));
+    }
+
+    addNode(userMsg);
     if (!isImplicitContinuation) setInput("");
     setLoading(true);
-    try { await sendMessageWith(history); }
-    catch(e) { updateActiveChat(chat => ({ ...chat, messages: [...chat.messages, { role: "assistant", content: `Error: ${e.message}` }], updatedAt: new Date().toISOString() })); }
-    finally  { setLoading(false); }
+
+    try {
+      const history = [...messages, userMsg];
+      await sendMessageWith(history, userMsg.id);
+    } catch(e) {
+      const errMsg = {
+        id: `msg_${Date.now()}`, parentId: userMsg.id,
+        role: "assistant", content: `Error: ${e.message}`,
+        timestamp: new Date().toISOString(),
+        finishReason: "stop", reasoning: null,
+        injectedMems: 0, injectedLore: 0,
+        injectedMemData: [], injectedLoreData: [],
+        implicit: false,
+      };
+      addNode(errMsg);
+      setActiveChildren(prev => ({ ...prev, [userMsg.id]: errMsg.id }));
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function regenerate() {
     if (loading || messages.length < 2) return;
-    const trimmed = messages.slice(0, -1);
-    updateActiveChat(chat => ({ ...chat, messages: trimmed, updatedAt: new Date().toISOString() }));
-    setLoading(true);
-    try { await sendMessageWith(trimmed); }
-    catch(e) { updateActiveChat(chat => ({ ...chat, messages: [...chat.messages, { role: "assistant", content: `Error: ${e.message}` }], updatedAt: new Date().toISOString() })); }
-    finally  { setLoading(false); }
-  }
+    const lastAssistant = messages[messages.length - 1];
+    if (lastAssistant.role !== "assistant") return;
 
-  function deleteMessage(index) {
-    let indicesToRemove =[index];
-    
-    // if message before this one is an implicit prompt, remove it too
-    if (index > 0 && messages[index-1]?.implicit){
-      indicesToRemove.push(index-1);
+    const cfg      = configRef.current;
+    const lastUser = messages[messages.length - 2];
+
+    if (cfg.branchMode === "inline") {
+      // Create a new sibling response — don't remove the old one
+      setLoading(true);
+      try { await sendMessageWith(messages.slice(0, -1), lastUser.id); }
+      catch(e) {
+        const errMsg = {
+          id: `msg_${Date.now()}`, parentId: lastUser.id,
+          role: "assistant", content: `Error: ${e.message}`,
+          timestamp: new Date().toISOString(),
+          finishReason: "stop", reasoning: null,
+          injectedMems: 0, injectedLore: 0,
+          injectedMemData: [], injectedLoreData: [],
+          implicit: false,
+        };
+        addNode(errMsg);
+        setActiveChildren(prev => ({ ...prev, [lastUser.id]: errMsg.id }));
+      }
+      finally { setLoading(false); }
+    } else {
+      // Replace mode — remove last assistant node and regenerate
+      removeNode(lastAssistant.id);
+      setActiveChildren(prev => {
+        const next = { ...prev };
+        delete next[lastAssistant.parentId];
+        return next;
+      });
+      setLoading(true);
+      try { await sendMessageWith(messages.slice(0, -1), lastUser.id); }
+      catch(e) {
+        const errMsg = {
+          id: `msg_${Date.now()}`, parentId: lastUser.id,
+          role: "assistant", content: `Error: ${e.message}`,
+          timestamp: new Date().toISOString(),
+          finishReason: "stop", reasoning: null,
+          injectedMems: 0, injectedLore: 0,
+          injectedMemData: [], injectedLoreData: [],
+          implicit: false,
+        };
+        addNode(errMsg);
+        setActiveChildren(prev => ({ ...prev, [lastUser.id]: errMsg.id }));
+      }
+      finally { setLoading(false); }
     }
-    
-    const next = messages.filter((_, i) => !indicesToRemove.includes(i));
-    updateActiveChat(chat => ({ ...chat, messages: next, updatedAt: new Date().toISOString() }));
   }
 
-  function editMessage(index, newContent) {
-    const next = messages.map((m, i) => i === index ? { ...m, content: newContent } : m);
-    updateActiveChat(chat => ({ ...chat, messages: next, updatedAt: new Date().toISOString() }));
+  function deleteMessage(id) {
+    const node = nodes.find(n => n.id === id);
+    if (!node) return;
+
+    // If assistant message preceded by implicit, delete both
+    let toDelete = [id];
+    if (node.role === "assistant") {
+      const parent = nodes.find(n => n.id === node.parentId);
+      if (parent?.implicit) toDelete.push(parent.id);
+    }
+
+    setNodes(prev => {
+      const next = prev.filter(n => !toDelete.includes(n.id));
+      messagesAPI.save(activeChatId, next, activeChildren).catch(console.error);
+      return next;
+    });
+
+    // Clean up activeChildren references
+    setActiveChildren(prev => {
+      const next = { ...prev };
+      for (const id of toDelete) {
+        delete next[node.parentId];
+      }
+      return next;
+    });
+  }
+
+  function editMessage(id, newContent) {
+    updateNode(id, n => ({ ...n, content: newContent }));
+  }
+
+  function switchBranch(parentId, direction) {
+    const siblings = getSiblings(nodes, parentId);
+    if (siblings.length <= 1) return;
+    const currentId    = activeChildren[parentId] ?? siblings[0].id;
+    const currentIndex = siblings.findIndex(s => s.id === currentId);
+    const nextIndex    = (currentIndex + direction + siblings.length) % siblings.length;
+    setActiveChild(parentId, siblings[nextIndex].id);
+  }
+
+  async function forkChat(nodeId) {
+    const nodeIndex    = messages.findIndex(m => m.id === nodeId);
+    const forkedMsgs   = messages.slice(0, nodeIndex + 1);
+    const forkTimestamp = forkedMsgs[forkedMsgs.length - 1]?.timestamp ?? new Date().toISOString();
+
+    // Build linear nodes and activeChildren for forked chat
+    const forkedNodes          = forkedMsgs.map(m => ({ ...m }));
+    const forkedActiveChildren = {};
+    for (let i = 0; i < forkedNodes.length - 1; i++) {
+      forkedActiveChildren[forkedNodes[i].id] = forkedNodes[i + 1].id;
+    }
+
+    const newChat = {
+      id:         crypto.randomUUID(),
+      title:      `${activeChat?.title ?? "Chat"} (branch)`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      messages:   [],
+    };
+
+    await chatsAPI.create(newChat.id, newChat.title, newChat.created_at, newChat.updated_at);
+    await messagesAPI.save(newChat.id, forkedNodes, forkedActiveChildren);
+    await memoriesAPI.fork(activeChatId, newChat.id, forkTimestamp);
+
+    setChats(prev => [newChat, ...prev]);
+    setActiveChatId(newChat.id);
+    setNodes(forkedNodes);
+    setActiveChildren(forkedActiveChildren);
+    saveStorage(STORAGE_KEYS.activeChat, newChat.id);
+    setSidebarOpen(true);
   }
 
   // ── Presets ─────────────────────────────────────────────────────────────────
@@ -602,6 +817,12 @@ export default function App() {
             config={config}
             onInjectionHover={showInjectionPanel}
             onInjectionLeave={hideInjectionPanel}
+            nodes={nodes}
+            activeChildren={activeChildren}
+            switchBranch={switchBranch}
+            forkChat={forkChat}
+            branchMode={config?.branchMode ?? "inline"}
+            getSiblings={getSiblings}
           />
         )}
 
@@ -612,8 +833,8 @@ export default function App() {
             memoryLog={memoryLog}
             config={config}
             addManualMemory={addManualMemory}
-            updateActiveChat={updateActiveChat}  
-            deleteMemory={deleteMemory}        
+            deleteMemory={deleteMemory} 
+            toggleMemoryPin={toggleMemoryPin}       
           />
         )}
 
@@ -629,6 +850,7 @@ export default function App() {
             setLorebookDraft={setLorebookDraft}
             addLorebookEntry={addLorebookEntry}
             deleteLorebookEntry={deleteLorebookEntry}
+            toggleLorePin={toggleLorePin}
           />
         )}
 
@@ -659,11 +881,12 @@ export default function App() {
             systemPrompt={systemPrompt}
             setSystemPrompt={setSystemPrompt}
             persistConfig={persistConfig}
-            chats={chats}
             lorebook={lorebook}
-            presets={presets}
-            updateActiveChat={updateActiveChat}
             setLorebook={setLorebook}
+            setNodes={setNodes}
+            setActiveChildren={setActiveChildren} 
+            setMemories={setMemories} 
+            activeChatId={activeChatId}
           />
         )}
 

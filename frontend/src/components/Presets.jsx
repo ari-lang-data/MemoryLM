@@ -74,6 +74,7 @@ systemPrompt, config, applyPreset,savePreset,deletePreset, presetDraft, setPrese
                 {[
                   { label: "Similarity weight (alpha)", key: "alpha",     min: 0.1, max: 0.9,  step: 0.05 },
                   { label: "Recency decay rate",        key: "decayRate", min: 0.001, max: 0.1, step: 0.001 },
+                  { label: "Context window (turns, 0=unlimited)", key: "contextWindow", min: 0, max: 50, step: 2 },
                 ].map(({ label, key, min, max, step }) => (
                   <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <label style={{ fontSize: 12, color: "var(--color-text-secondary)", flex: 1 }}>{label}</label>
@@ -94,6 +95,19 @@ systemPrompt, config, applyPreset,savePreset,deletePreset, presetDraft, setPrese
                     <option value="creative">Creative</option>
                     <option value="roleplay">Roleplay</option>
                     <option value="technical">Technical</option>
+                  </select>
+                </div>
+
+                {/* Branching behaviour */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 12, color: "var(--color-text-secondary)", flex: 1 }}>Regenerate mode</label>
+                  <select
+                    value={presetDraft.config.branchMode ?? "replace"}
+                    onChange={e => setPresetDraft(d => ({ ...d, config: { ...d.config, branchMode: e.target.value } }))}
+                    style={{ ...inputStyle, fontSize: 12 }}
+                  >
+                    <option value="replace">Replace</option>
+                    <option value="inline">Branch (inline)</option>
                   </select>
                 </div>
 
