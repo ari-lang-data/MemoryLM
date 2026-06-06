@@ -41,6 +41,19 @@ export const DEFAULT_PRESETS = [
     },
   },
   {
+    id: "roleplay",
+    name: "Roleplay",
+    icon: "🎭",
+    systemPrompt: "You are {$char}. Stay in character at all times. Respond only as {$char} would, maintaining their personality, speech patterns, and worldview.",
+    config: {
+      chunkEvery: 3, topK: 6, threshold: 0.2, temperature: 0.8,
+      repetitionPenalty: 1.05, autoSummarise: true, dedupMode: "merge",
+      dedupThreshold: 0.88, modelName: "", alpha: 0.4, decayRate: 0.003,
+      style: "roleplay", continuationPrompt: "Continue the scene.",
+      branchMode: "inline", contextWindow: 20,
+    },
+  },
+  {
     id: "coding",
     name: "Coding",
     icon: "💻",

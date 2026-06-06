@@ -1,9 +1,9 @@
-export async function lmFetch(msgs, sysprompt, configRef, lmUrlRef, onChunk = null) {
+export async function lmFetch(msgs, sysprompt, configRef, lmUrlRef, onChunk = null, maxTokens=null) {
   const cfg  = configRef.current;
   const base = lmUrlRef.current.replace(/\/$/, "");
   const body = {
     messages:           [{ role: "system", content: sysprompt }, ...msgs],
-    max_tokens:         1000,
+    max_tokens:         maxTokens ?? 1000,
     temperature:        cfg.temperature ?? 0.7,
     repetition_penalty: cfg.repetitionPenalty ?? 1.0,
     stream:             !!onChunk,  // only stream if callback provided

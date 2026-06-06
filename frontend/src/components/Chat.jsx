@@ -39,7 +39,8 @@ export default function Chat({chats,
         switchBranch,
         forkChat,
         branchMode,
-        getSiblings,
+        getSiblings,onExtractEntities,
+        extracting,
         }){
 
           const lastMsg         = messages[messages.length - 1];
@@ -195,32 +196,45 @@ export default function Chat({chats,
               <div ref={messagesEndRef} />
             </div>
 
-            <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", display: "flex", justifyContent: "center" }}>
+            <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", display: "flex", justifyContent: "center", borderTopLeftRadius: "var(--border-radius-md)", borderTopRightRadius: "var(--border-radius-md)"}}>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", width: "100%", maxWidth: 680 }}>
                 <textarea
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                   placeholder="Message… (Enter to send, Shift+Enter for newline)"
-                  style={{ flex: 1, resize: "none", minHeight: 85, maxHeight: 140, padding: "10px 12px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", fontSize: 14, fontFamily: "var(--font-sans)", lineHeight: 1.5 }}
+                  style={{ flex: 1, resize: "none", minHeight: 90, maxHeight: 140, padding: "10px 12px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", fontSize: 14, fontFamily: "var(--font-sans)", lineHeight: 1.5 }}
                 />
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <button
+                    onClick={sendMessage}
+                    disabled={loading || (!input.trim() && !showContinuation)}
+                    title={showContinuation && !input.trim() ? "Continue" : "Send"}
+                    style={{ padding: "9px 14px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: loading || !input.trim() ? "transparent": "var(--color-send-button)", cursor: loading || (!input.trim() && !showContinuation) ? "not-allowed" : "pointer", color: "var(--color-text-primary)", fontSize: 16, opacity: loading || (!input.trim() && !showContinuation) ? 0.35 : 1 }}
+                  >
+                    {showContinuation && !input.trim() ? "▶▶" : "↑"}
+                  </button>
+                  <button
+                    onClick={regenerate}
+                    disabled={loading || messages.length < 2}
+                    title="Regenerate last response"
+                    style={{ padding: "9px 14px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", background: "transparent", cursor: loading || messages.length < 2 ? "not-allowed" : "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: loading || messages.length < 2 ? 0.35 : 1 }}
+                  >↺</button>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: "0px 2px", background: "var(--color-background-primary)", display: "flex", justifyContent: "center", borderBottomLeftRadius:"var(--border-radius-md)",borderBottomRightRadius: "var(--border-radius-md)"}}>
+            {(config?.style === "none" || config?.style === "technical" || config?.style==="creative") && messages.length > 0 && (
+              <div style={{ paddingTop: 1, paddingBottom: 1 }}>
                 <button
-                  onClick={sendMessage}
-                  disabled={loading || (!input.trim() && !showContinuation)}
-                  title={showContinuation && !input.trim() ? "Continue" : "Send"}
-                  style={{ padding: "9px 14px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: loading || !input.trim() ? "transparent": "var(--color-send-button)", cursor: loading || (!input.trim() && !showContinuation) ? "not-allowed" : "pointer", color: "var(--color-text-primary)", fontSize: 16, opacity: loading || (!input.trim() && !showContinuation) ? 0.35 : 1 }}
-                >
-                  {showContinuation && !input.trim() ? "▶▶" : "↑"}
+                  onClick={onExtractEntities}
+                  disabled={extracting}
+                  style={{ background: "transparent", border: "none", cursor: extracting ? "not-allowed" : "pointer", color: "var(--color-text-tertiary)", fontSize: 11, padding: 0, opacity: extracting ? 0.5 : 1 }}
+                  >
+                  {extracting ? "Extracting…" : "⊕ Extract entities from conversation"}
                 </button>
-                <button
-                  onClick={regenerate}
-                  disabled={loading || messages.length < 2}
-                  title="Regenerate last response"
-                  style={{ padding: "9px 14px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", background: "transparent", cursor: loading || messages.length < 2 ? "not-allowed" : "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: loading || messages.length < 2 ? 0.35 : 1 }}
-                >↺</button>
               </div>
-              </div>
+            )}
             </div>
           </div>
         )}

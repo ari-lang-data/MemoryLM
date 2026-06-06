@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI } from "./lib/api";
+import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI } from "./lib/api";
 
 import useEmbedder from "./hooks/useEmbedder";
 import {parseReasoning} from "./lib/parseReasoning";
 import {getActivePath, getSiblings} from "./lib/branching";
 import { getRetrievalProfile } from "./lib/retrievalClassifier";
+import { resolveTemplate } from "./lib/templateResolver";
 
 // ── LM fetch ────────────────────────────────────────────────────────────────
 import {lmFetch} from "./lib/lmFetch";
@@ -37,6 +38,8 @@ import {Card,CardTitle,Row} from "./components/ui/shared";
   import Settings from "./components/Settings";
   import ChatSidebar from "./components/ChatSidebar";
   import InjectionPanel from "./components/InjectionPanel";
+  import CharacterTab from "./components/CharacterTab";
+  import GraphPanel from "./components/GraphPanel";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -59,6 +62,13 @@ export default function App() {
   const [editingPreset,  setEditingPreset]  = useState(null);
   const [presetDraft,    setPresetDraft]    = useState(null);
   const [lmStudioUrl,    setLmStudioUrl]    = useState(DEFAULT_LM_STUDIO_URL);
+  const [entities,      setEntities]      = useState([]);
+  const [charactersLoading, setCharactersLoading] = useState(false);
+  const [characters,    setCharacters]    = useState([]);
+  const [templateVars,  setTemplateVars]  = useState([]);
+  const [activeCharId,  setActiveCharId]  = useState(null);
+  const [userCharId,    setUserCharId]    = useState(null);
+  const [extracting, setExtracting] = useState(false);
   const [config, setConfig] = useState({
     chunkEvery: 4, topK: 4, threshold: 0.35, temperature: 0.7, repetitionPenalty: 1.0,
     autoSummarise: true, dedupMode: "merge", dedupThreshold: DEDUP_THRESHOLD, modelName: "", alpha: 0.7, decayRate: 0.01,
@@ -69,6 +79,7 @@ export default function App() {
   const messagesEndRef  = useRef(null);
   const configRef       = useRef(config);
   const lmUrlRef        = useRef(lmStudioUrl);
+  const nodesChatRef = useRef(null); // tracks which chat the current nodes belong to
 
   const activeChat = chats.find(c => c.id === activeChatId)?? chats[0];
   const [nodes,          setNodes]          = useState([]);
@@ -86,6 +97,7 @@ export default function App() {
   }, [activeChatId]);
   useEffect(() => {
     if (!activeChatId || nodes.length === 0) return;
+    if (nodesChatRef.current !== activeChatId) return; // guard — don't save stale nodes
     messagesAPI.save(activeChatId, nodes, activeChildren).catch(console.error);
   }, [nodes, activeChildren, activeChatId]);
 
@@ -125,11 +137,30 @@ export default function App() {
 
         if (savedPresets?.length) setPresets(current => {
           const backendIds = new Set(savedPresets.map(preset => preset.id));
-          const defaults   = DEFAULT_PRESETS.filter(preset => !backendIds.has(preset.id));
-          return [...defaults, ...savedPresets];
+
+          const mergedPresets = DEFAULT_PRESETS.map(def => {
+            const saved = savedPresets?.find(p => p.id === def.id);
+            return saved ? { ...def, ...saved, config: { ...def.config, ...saved.config } } : def;
+          });
+          setPresets(mergedPresets);
         });
 
-        if (savedActivePreset) setActivePreset(savedActivePreset);
+        if (savedActivePreset) {
+          setActivePreset(savedActivePreset);
+          const preset = (savedPresets ?? DEFAULT_PRESETS).find(p => p.id === savedActivePreset);
+          if (preset?.config?.style === "roleplay" || preset?.config?.style === "creative") {
+            const [chars, tvars] = await Promise.all([
+              graphAPI.getCharacters(savedActivePreset),
+              graphAPI.getTemplateVars(savedActivePreset),
+            ]);
+            if (chars?.length)  setCharacters(chars);
+            if (tvars?.length)  setTemplateVars(tvars);
+            const activeChar = chars?.find(c => c.is_active_char);
+            const userChar   = chars?.find(c => c.is_user_char);
+            if (activeChar) setActiveCharId(activeChar.id);
+            if (userChar)   setUserCharId(userChar.id);
+          }
+        }
 
         if (savedCfg) {
           if (savedCfg.config)       setConfig(c => ({ ...c, ...savedCfg.config }));
@@ -141,6 +172,7 @@ export default function App() {
         if (savedMsgs) {
           setNodes(savedMsgs.nodes ?? []);
           setActiveChildren(savedMsgs.activeChildren ?? {});
+          nodesChatRef.current = savedActiveChat ?? savedChats[0]?.id ?? null;
         }
       } catch(e) {
         console.error("Boot error:", e);
@@ -153,8 +185,114 @@ export default function App() {
     saveStorage(STORAGE_KEYS.config, { config: cfg, systemPrompt: sysprompt, lmStudioUrl: url });
   }
 
+  async function extractEntities() {
+    if (extracting || messages.length === 0) return;
+    setExtracting(true);
+    addLog("Entity extraction started…");
+
+    try {
+      // Build transcript from active path
+      const transcript = messages
+        .filter(m => !m.implicit)
+        .slice(-20) // last 20 messages — enough context without overloading
+        .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+        .join("\n");
+
+      // Ask LLM to extract entities and relationships
+      const { content: raw } = await lmFetch(
+          [{
+            role: "user",
+            content: `Extract named entities and their relationships from this conversation. Return ONLY valid JSON in this exact format, no preamble, no markdown fences:
+        {
+          "entities": [
+            { "name": "string", "type": "character|concept|location|event|faction|other", "description": "brief description" }
+          ],
+          "edges": [
+            { "source": "entity name", "target": "entity name", "relationship": "verb phrase", "weight": 0.0-1.0 }
+          ]
+        }
+
+        Extraction rules:
+        - Do NOT extract years, dates, numbers, or time periods as entities
+        - If multiple authors or people are listed together, create one entity per person
+        - Only extract persistent relationships — things that remain true over time
+        - Do NOT extract transient actions, single dialogue exchanges, or one-time events as relationships
+        - Do NOT extract negations or absence of relationships ("had never met", "unrelated to", "differs from" unless it describes a genuine conceptual distinction)
+        - Use verb phrases for relationships ("tutors", "commands", "lives at", "proposed", "introduced by")
+        - Weight reflects confidence and persistence: 1.0 for certain persistent facts, lower for implied or uncertain
+        - Be conservative — only extract what is clearly and explicitly stated
+        - Do NOT hallucinate entities or relationships not present in the text
+
+        Conversation:
+        ${transcript}`
+          }],
+          "You are a conservative entity extraction assistant. Extract only clearly named entities and explicit, persistent relationships. When in doubt, omit. Return only valid JSON with no markdown fences, no preamble, no trailing text.",
+          configRef,
+          lmUrlRef,
+          null,
+          2000
+      );
+
+      // Parse response
+      let extracted;
+      try {
+        const clean = raw.replace(/```json|```/g, "").trim();
+        extracted   = JSON.parse(clean);
+      } catch {
+        addLog("Entity extraction: failed to parse response");
+        return;
+      }
+
+      if (!extracted?.entities?.length) {
+        addLog("Entity extraction: no entities found");
+        return;
+      }
+
+      // Build name → id map for edge creation
+      const nameToId = {};
+
+      // Create entities
+      for (const entity of extracted.entities) {
+        const id  = `entity_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        nameToId[entity.name.toLowerCase()] = id;
+        await graphAPI.createEntity({
+          id,
+          name:        entity.name,
+          type:        entity.type ?? "other",
+          description: entity.description ?? "",
+          chat_id:     activeChatId,
+        });
+      }
+
+      // Create edges
+      for (const edge of (extracted.edges ?? [])) {
+        const sourceId = nameToId[edge.source?.toLowerCase()];
+        const targetId = nameToId[edge.target?.toLowerCase()];
+        if (!sourceId || !targetId) continue;
+        await graphAPI.createEdge({
+          source_id:    sourceId,
+          target_id:    targetId,
+          relationship: edge.relationship ?? "Related",
+          weight:       edge.weight ?? 0.5,
+        });
+      }
+
+      // Refresh entities
+      const updated = await graphAPI.getEntities(activeChatId);
+      setEntities(updated ?? []);
+
+      addLog(`Entity extraction: ${extracted.entities.length} entities, ${extracted.edges?.length ?? 0} edges added`);
+
+    } catch(e) {
+      addLog(`Entity extraction failed: ${e.message}`);
+    } finally {
+      setExtracting(false);
+    }
+  }
+
   // ── Chat management ─────────────────────────────────────────────────────────
   function addNode(node) {
+    nodesChatRef.current = activeChatId; // mark nodes as belonging to this chat
     setNodes(prev => {
       const next = [...prev, node];
       return next;
@@ -162,6 +300,7 @@ export default function App() {
   }
 
   function updateNode(id, updater) {
+    nodesChatRef.current = activeChatId; // mark nodes as belonging to this chat
     setNodes(prev => {
       const next = prev.map(n => n.id === id ? updater(n) : n);
       return next;
@@ -169,6 +308,7 @@ export default function App() {
   }
 
   function removeNode(id) {
+    nodesChatRef.current = activeChatId; // mark nodes as belonging to this chat
     setNodes(prev => {
       const next = prev.filter(n => n.id !== id);
       return next;
@@ -183,6 +323,9 @@ export default function App() {
   }
 
   async function createNewChat() {
+    nodesChatRef.current = null; // invalidate
+    setNodes([]);
+    setActiveChildren({});
     const newChat = {
       id:         crypto.randomUUID(),
       title:      "New Chat",
@@ -194,14 +337,19 @@ export default function App() {
     setChats(prev => [newChat, ...prev]);
     setActiveChatId(newChat.id);
     saveStorage(`mem_messages_${newChat.id}`, []);
+    nodesChatRef.current = newChat.id; // mark as valid after creation
   }
 
-  async function switchChat(id) {// for inline branching
+  async function switchChat(id) {
+    nodesChatRef.current = null; // invalidate before loading
+    setNodes([]);
+    setActiveChildren({});
     setActiveChatId(id);
     saveStorage(STORAGE_KEYS.activeChat, id);
     const savedMsgs = await messagesAPI.get(id);
     setNodes(savedMsgs?.nodes ?? []);
     setActiveChildren(savedMsgs?.activeChildren ?? {});
+    nodesChatRef.current = id; // mark as valid
   }
 
   async function deleteChat(id) {
@@ -328,10 +476,9 @@ export default function App() {
 
   // ── Lorebook ────────────────────────────────────────────────────────────────
   async function addLorebookEntry(draft) {
-  // Embed only title + tags for better retrieval matching
     const embedText = `${draft.title} ${draft.tags}`.trim();
-    const vec  = await embed(embedText);
-    const entry = {
+    const vec       = await embed(embedText);
+    const entry     = {
       id:        `lore_${Date.now()}`,
       title:     draft.title,
       type:      draft.type,
@@ -340,14 +487,33 @@ export default function App() {
       embedding: vec,
       timestamp: new Date().toISOString(),
     };
+
     if (editingLore) {
       await lorebookAPI.update(editingLore, entry);
       setLorebook(prev => prev.map(e => e.id === editingLore ? entry : e));
+      // Update graph entity too
+      await graphAPI.updateEntity(editingLore, {
+        name:        draft.title,
+        description: draft.content.slice(0, 200),
+      });
       setEditingLore(null);
     } else {
       await lorebookAPI.add(entry);
       setLorebook(prev => [...prev, entry]);
+      // Create graph entity for this lorebook entry
+      await graphAPI.createEntity({
+        id:          entry.id,
+        name:        draft.title,
+        type:        draft.type,
+        description: draft.content.slice(0, 200),
+        preset_id:   ["roleplay","creative"].includes(config?.style) ? activePreset : null,
+        chat_id:     ["roleplay","creative"].includes(config?.style) ? null : activeChatId,
+      });
+      // Refresh entities
+      const updated = await graphAPI.getEntities(activeChatId, activePreset);
+      setEntities(updated ?? []);
     }
+
     setLorebookDraft({ title: "", tags: "", content: "", type: "character" });
     addLog(`Lorebook entry "${draft.title}" saved`);
   }
@@ -370,6 +536,9 @@ export default function App() {
   // ── Chat Management ───────────────────────────────────────────────────────
   async function sendMessageWith(history, parentId) {
     const cfg = configRef.current;
+    const activeChar = characters.find(c => c.id === activeCharId) ?? null;
+    const userChar   = characters.find(c => c.id === userCharId)   ?? null;
+    const resolvedSystemPrompt = resolveTemplate(systemPrompt, activeChar, userChar);
     const last     = history[history.length - 1];
     const window = cfg.contextWindow ?? 0;
     const windowedHistory = window > 0
@@ -390,6 +559,12 @@ export default function App() {
     );
 
     addLog(`Retrieval context: ${profile.context}`);
+
+    // After character context injection, for non-creative presets:
+    if (!["creative", "roleplay"].includes(cfg.style ?? "none") && entities.length > 0) {
+      const graphContext = await buildResearchContext(queryContent);
+      if (graphContext) injected += `\n\n[KNOWLEDGE GRAPH]\n${graphContext}`;
+    }
 
     // Pinned items — always injected
     const [pinnedMems, pinnedLore] = await Promise.all([
@@ -431,7 +606,7 @@ export default function App() {
       }
     }
 
-    const retrievedLore = queryVec
+    const retrievedLore = queryVec && cfg.style !== "roleplay"
       ? await lorebookAPI.query(queryVec, profile.topK, profile.lorebookThreshold ?? profile.threshold)
       : [];
 
@@ -454,13 +629,31 @@ export default function App() {
       memoriesAPI.markRetrieved(m.id, now).catch(console.error);
     });
 
-    let injected = systemPrompt;
+    let injected = resolvedSystemPrompt;
     if (relMems.length > 0)
       injected += `\n\n[RECALLED MEMORIES — use naturally, do not cite directly]\n${relMems.map(m => `• ${m.summary}`).join("\n")}`;
     if (relLore.length > 0)
       injected += `\n\n[LOREBOOK — world/character context]\n${relLore.map(l => `[${(l.type ?? "ENTRY").toUpperCase()}] ${l.title}: ${l.content}`).join("\n")}`;
     if (relMems.length + relLore.length > 0)
       addLog(`Injected ${relMems.length} mem (${pinnedMems.length} pinned) + ${relLore.length} lore (${pinnedLore.length} pinned)`);
+    if (activeChar) {
+      const charContext = [
+        activeChar.appearance     && `Appearance: ${activeChar.appearance}`,
+        activeChar.behaviour      && `Behaviour: ${activeChar.behaviour}`,
+        activeChar.speech_pattern && `Speech pattern: ${activeChar.speech_pattern}`,
+        activeChar.background     && `Background: ${activeChar.background}`,
+      ].filter(Boolean).join("\n");
+
+      if (charContext) {
+        injected += `\n\n[ACTIVE CHARACTER — embody this persona]\n${charContext}`;
+      }
+
+      // Walk character's edges for referenced entities
+      if (queryVec) {
+        const graphContext = await buildGraphContext(activeChar.id, queryContent);
+        if (graphContext) injected += `\n\n[CHARACTER RELATIONSHIPS]\n${graphContext}`;
+      }
+    }
     // Placeholder node
     const placeholderId = `msg_${Date.now()}`;
     const placeholder   = {
@@ -701,8 +894,63 @@ export default function App() {
     setSidebarOpen(true);
   }
 
+  async function buildGraphContext(entityId, queryContent) {
+    try {
+      const edges = await graphAPI.traverse(entityId, 1);
+      if (!edges?.length) return null;
+
+      // Filter edges by relevance to query — only inject high-weight edges
+      // or edges whose target name appears in the query content
+      const relevant = edges.filter(e =>
+        e.edge.weight >= 0.7 ||
+        queryContent.toLowerCase().includes(e.entity?.name?.toLowerCase() ?? "")
+      );
+
+      if (!relevant.length) return null;
+
+      return relevant
+        .map(e => `${e.edge.relationship}: ${e.entity.name}${e.entity.description ? ` — ${e.entity.description}` : ""}`)
+        .join("\n");
+    } catch {
+      return null;
+    }
+  }
+
+  async function buildResearchContext(queryContent) {
+    try {
+      if (!entities.length) return null;
+
+      // Find entities mentioned in query
+      const mentioned = entities.filter(e =>
+        queryContent.toLowerCase().includes(e.name.toLowerCase())
+      );
+
+      if (!mentioned.length) return null;
+
+      // Traverse each mentioned entity and collect connections
+      const results = await Promise.all(
+        mentioned.map(e => graphAPI.traverse(e.id, 2))
+      );
+
+      const lines = [];
+      mentioned.forEach((entity, i) => {
+        const connections = results[i] ?? [];
+        if (connections.length) {
+          lines.push(`${entity.name} (${entity.type}):`);
+          connections.forEach(c => {
+            lines.push(`  ${c.edge.relationship} → ${c.entity.name}: ${c.entity.description ?? ""}`);
+          });
+        }
+      });
+
+      return lines.length ? lines.join("\n") : null;
+    } catch {
+      return null;
+    }
+  }
+
   // ── Presets ─────────────────────────────────────────────────────────────────
- function applyPreset(preset) {
+  async function applyPreset(preset) {
     setSystemPrompt(preset.systemPrompt);
     setConfig(c => {
       const next = { ...c, ...preset.config };
@@ -711,6 +959,26 @@ export default function App() {
     });
     setActivePreset(preset.id);
     saveStorage(STORAGE_KEYS.activePreset, preset.id);
+
+    if (preset.config?.style === "roleplay" || preset.config?.style === "creative") {
+      setCharactersLoading(true);
+      const [chars, tvars] = await Promise.all([
+        graphAPI.getCharacters(preset.id),
+        graphAPI.getTemplateVars(preset.id),
+      ]);
+      setCharacters(chars ?? []);
+      setTemplateVars(tvars ?? []);
+      const activeChar = chars?.find(c => c.is_active_char);
+      const userChar   = chars?.find(c => c.is_user_char);
+      setActiveCharId(activeChar?.id ?? null);
+      setUserCharId(userChar?.id ?? null);
+      setCharactersLoading(false);
+    } else {
+      setCharacters([]);
+      setTemplateVars([]);
+      setActiveCharId(null);
+      setUserCharId(null);
+    }
   }
 
   async function savePreset(draft) {
@@ -729,13 +997,37 @@ export default function App() {
     }
   }
 
-  async function deletePreset(id) {
-    await presetsAPI.delete(id);
-    const next = presets.filter(p => p.id !== id);
-    setPresets(next);
-    if (activePreset === id) {
-      setActivePreset(null);
-      saveStorage(STORAGE_KEYS.activePreset, null);
+  async function updatePresetConfig(presetId, key, value) {
+    setPresets(prev => {
+      const next = prev.map(p => p.id === presetId
+        ? { ...p, config: { ...p.config, [key]: value } }
+        : p
+      );
+      presetsAPI.save(next.find(p => p.id === presetId)).catch(console.error);
+      return next;
+    });
+    // If this is the active preset, update live config too
+    if (activePreset === presetId) {
+      setConfig(c => {
+        const next = { ...c, [key]: value };
+        persistConfig(next, systemPrompt, lmStudioUrl);
+        return next;
+      });
+    }
+  }
+
+  async function updatePresetPrompt(presetId, prompt) {
+    setPresets(prev => {
+      const next = prev.map(p => p.id === presetId
+        ? { ...p, systemPrompt: prompt }
+        : p
+      );
+      presetsAPI.save(next.find(p => p.id === presetId)).catch(console.error);
+      return next;
+    });
+    if (activePreset === presetId) {
+      setSystemPrompt(prompt);
+      persistConfig(config, prompt, lmStudioUrl);
     }
   }
 
@@ -744,7 +1036,7 @@ export default function App() {
 
   const statusColor     = { ready: "#1D9E75", loading: "#BA7517", error: "#E24B4A", idle: "#888780" }[embedderStatus];
   const statusLabel     = { ready: "Embedder ready", loading: "Loading model…", error: "Embedder error", idle: "Embedder idle" }[embedderStatus];
-  const activePresetObj = presets.find(p => p.id === activePreset);
+  const activePresetObj = (presets ?? DEFAULT_PRESETS).find(p => p.id === activePreset);
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ fontFamily: "var(--font-sans)", display: "flex", flexDirection: "column", height: "100vh", background: "var(--color-background-tertiary)" }}>
@@ -768,18 +1060,51 @@ export default function App() {
           MemoryLM
         </button>
         <div style={{ display: "flex", gap: 3, marginLeft: 6 }}>
-          {["chat","memory","lorebook","presets","settings"].map(p => (
+          {["chat","memory","lorebook","presets","settings", "graph"].map(p => (
             <button key={p} onClick={() => setActivePanel(p)} style={{ padding: "4px 11px", fontSize: 12, borderRadius: "var(--border-radius-md)", border: activePanel === p ? "0.5px solid var(--color-border-primary)" : "0.5px solid transparent", background: activePanel === p ? "var(--color-background-secondary)" : "transparent", color: activePanel === p ? "var(--color-text-primary)" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: activePanel === p ? 500 : 400 }}>
               {p.charAt(0).toUpperCase() + p.slice(1)}
             </button>
           ))}
+
+          {config?.style === "roleplay" && (
+            <button
+              key="characters"
+              onClick={() => setActivePanel("characters")}
+              style={{ padding: "4px 11px", fontSize: 12, borderRadius: "var(--border-radius-md)", border: activePanel === "characters" ? "0.5px solid var(--color-border-primary)" : "0.5px solid transparent", background: activePanel === "characters" ? "var(--color-background-secondary)" : "transparent", color: activePanel === "characters" ? "var(--color-text-primary)" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: activePanel === "characters" ? 500 : 400 }}
+            >
+              Characters
+            </button>
+          )}
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-          {activePresetObj && (
-            <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
-              {activePresetObj.icon} {activePresetObj.name}
-            </span>
-          )}
+          {(() => {
+            const activeChar = characters.find(c => c.id === activeCharId);
+            const meta       = typeof activeChar?.metadata === "string"
+              ? JSON.parse(activeChar.metadata)
+              : (activeChar?.metadata ?? {});
+
+            if (activeChar && config?.style==="roleplay") {
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 8px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
+                  {meta.avatar
+                    ? <img src={meta.avatar} style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+                    : <div style={{ width: 18, height: 18, borderRadius: "50%", background: "var(--color-background-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--color-text-tertiary)", flexShrink: 0 }}>{activeChar.name?.charAt(0)?.toUpperCase()}</div>
+                  }
+                  <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{activeChar.name}</span>
+                </div>
+              );
+            }
+
+            if (activePresetObj) {
+              return (
+                <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
+                  {activePresetObj.icon} {activePresetObj.name}
+                </span>
+              );
+            }
+
+            return null;
+          })()}
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: statusColor, flexShrink: 0 }} />
           <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{statusLabel}</span>
           <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{memories.length} mem · {lorebook.length} lore</span>
@@ -823,6 +1148,27 @@ export default function App() {
             forkChat={forkChat}
             branchMode={config?.branchMode ?? "inline"}
             getSiblings={getSiblings}
+            onExtractEntities={extractEntities}
+            extracting={extracting}
+          />
+        )}
+
+        {/* ── CHARACTER ── */}
+        {activePanel === "characters" && (
+          <CharacterTab
+            activePresetId={activePreset}
+            characters={characters}
+            setCharacters={setCharacters}
+            templateVars={templateVars}
+            setTemplateVars={setTemplateVars}
+            activeCharId={activeCharId}
+            setActiveCharId={setActiveCharId}
+            userCharId={userCharId}
+            setUserCharId={setUserCharId}
+            entities={entities}
+            setEntities={setEntities}
+            inputStyle={inputStyle}
+            charactersLoading={charactersLoading}
           />
         )}
 
@@ -858,16 +1204,10 @@ export default function App() {
         {activePanel === "presets" && (
           <Presets
             presets={presets}
-            editingPreset={editingPreset}
             activePreset={activePreset}
-            setEditingPreset={setEditingPreset}
-            systemPrompt={systemPrompt}
-            config={config}
             applyPreset={applyPreset}
-            savePreset={savePreset}
-            deletePreset={deletePreset}
-            presetDraft={presetDraft}
-            setPresetDraft={setPresetDraft}
+            updatePresetConfig={updatePresetConfig}
+            updatePresetPrompt={updatePresetPrompt}
           />
         )}
 
@@ -887,6 +1227,15 @@ export default function App() {
             setActiveChildren={setActiveChildren} 
             setMemories={setMemories} 
             activeChatId={activeChatId}
+            graphAPI={graphAPI}
+          />
+        )}
+
+        {activePanel === "graph" && (
+          <GraphPanel
+            activeChatId={activeChatId}
+            activePresetId={activePreset}
+            activePreset={activePreset}
           />
         )}
 

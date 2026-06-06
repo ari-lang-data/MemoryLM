@@ -19,7 +19,7 @@ export default function Settings({
   lorebook, setLorebook,
   activeChatId,
   setNodes, setActiveChildren,
-  setMemories,
+  setMemories, graphAPI
 }) {
   const [settingsTab, setSettingsTab] = useState("connection");
 
@@ -135,12 +135,42 @@ export default function Settings({
         <Card>
           <CardTitle>Data management</CardTitle>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={() => {
-              const blob = new Blob([JSON.stringify({ lorebook }, null, 2)], { type: "application/json" });
-              const a = document.createElement("a");
-              a.href = URL.createObjectURL(blob);
-              a.download = "memorylm_export.json";
-              a.click();
+            <button onClick={async () => {
+              try {
+                const [entities, templateVars] = await Promise.all([
+                  graphAPI.getEntities(activeChatId, activePresetId),
+                  graphAPI.getTemplateVars(activePresetId),
+                ]);
+
+                // Get all edges for all entities
+                const edgeSets = await Promise.all(
+                  entities.map(e => graphAPI.getEdges(e.id, "out"))
+                );
+                const allEdges = edgeSets.flat();
+
+                // Get character cards
+                const characters = await graphAPI.getCharacters(activePresetId);
+
+                const exportData = {
+                  exportedAt:   new Date().toISOString(),
+                  lorebook,
+                  entities,
+                  edges:        allEdges,
+                  characters,
+                  templateVars,
+                };
+
+                const blob = new Blob(
+                  [JSON.stringify(exportData, null, 2)],
+                  { type: "application/json" }
+                );
+                const a    = document.createElement("a");
+                a.href     = URL.createObjectURL(blob);
+                a.download = `memorylm_export_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+              } catch(e) {
+                console.error("Export failed:", e);
+              }
             }} style={{ ...inputStyle, cursor: "pointer" }}>Export JSON</button>
             <button onClick={async () => {
               if (confirm("Clear chat history?")) {

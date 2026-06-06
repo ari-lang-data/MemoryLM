@@ -67,3 +67,31 @@ export const clustersAPI = {
   query:  (chat_id, embedding, n_results, threshold) =>
     request("POST", "/clusters/query", { chat_id, embedding, n_results, threshold }),
 };
+// ─── Entity graphs ─────────────────────────────────────────────────────────────────
+export const graphAPI = {
+  // Entities
+  createEntity:  (entity)                    => request("POST",   "/graph/entities",                    entity),
+  getEntities:   (chat_id, preset_id, type)  => request("GET",    `/graph/entities?${new URLSearchParams({ ...(chat_id && { chat_id }), ...(preset_id && { preset_id }), ...(type && { type }) })}`),
+  getEntity:     (id)                        => request("GET",    `/graph/entities/${id}`),
+  updateEntity:  (id, body)                  => request("PATCH",  `/graph/entities/${id}`,              body),
+  deleteEntity:  (id)                        => request("DELETE", `/graph/entities/${id}`),
+
+  // Edges
+  createEdge:    (edge)                      => request("POST",   "/graph/edges",                       edge),
+  getEdges:      (entity_id, direction)      => request("GET",    `/graph/edges/${entity_id}?direction=${direction ?? "both"}`),
+  updateEdge:    (id, body)                  => request("PATCH",  `/graph/edges/${id}`,                 body),
+  deleteEdge:    (id)                        => request("DELETE", `/graph/edges/${id}`),
+
+  // Characters
+  upsertCharacter:   (id, body)              => request("PUT",    `/graph/characters/${id}`,            body),
+  getCharacters:     (preset_id)             => request("GET",    `/graph/characters?${preset_id ? `preset_id=${preset_id}` : ""}`),
+  getCharacter:      (id)                    => request("GET",    `/graph/characters/${id}`),
+  activateCharacter: (id, is_user)           => request("PATCH",  `/graph/characters/${id}/activate?is_user=${!!is_user}`),
+
+  // Template vars
+  setTemplateVar:    (body)                  => request("POST",   "/graph/template-vars",               body),
+  getTemplateVars:   (preset_id)             => request("GET",    `/graph/template-vars?${preset_id ? `preset_id=${preset_id}` : ""}`),
+
+  // Traversal
+  traverse:      (entity_id, depth, relationship) => request("GET", `/graph/traverse/${entity_id}?depth=${depth ?? 1}${relationship ? `&relationship=${relationship}` : ""}`),
+};
