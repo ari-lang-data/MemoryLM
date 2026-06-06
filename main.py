@@ -4,6 +4,9 @@ from database.sqlite import init_db
 from dotenv import load_dotenv
 import os
 from routers import memories, lorebook, chats, presets, messages, clusters
+from database.graph import init_graph, switch_to_sqlite
+import sys
+from routers import memories, lorebook, chats, presets, messages, clusters, graph
 
 load_dotenv()
 
@@ -11,6 +14,7 @@ app = FastAPI(title="MemoryLM Backend")
 
 app.include_router(messages.router, prefix="/messages", tags=["messages"])
 app.include_router(clusters.router, prefix="/clusters", tags=["clusters"])
+app.include_router(graph.router, prefix="/graph", tags=["graph"])
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
@@ -23,7 +27,29 @@ app.add_middleware(
 # ─── Startup ──────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 def on_startup():
-    init_db()
+    init_db()  # SQLite for chats/presets
+    
+    # Graph initialisation with explicit failure handling
+    try:
+        backend = init_graph()
+        print(f"Graph backend: {backend}")
+    except RuntimeError as e:
+        print(f"\n{'='*50}")
+        print(f"DuckDB graphbase failed to initialise: {e}")
+        print("(a) Repair — fix DuckDB and restart")
+        print("(b) Open SQLite graphbase backup")
+        print("(c) Exit")
+        print('='*50)
+        choice = input("Choose (a/b/c): ").strip().lower()
+        if choice == "b":
+            switch_to_sqlite()
+            print("Running on SQLite graphbase backup.")
+        elif choice == "c":
+            sys.exit(1)
+        else:
+            print("Please repair DuckDB and restart.")
+            sys.exit(1)
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 app.include_router(memories.router,  prefix="/memories",  tags=["memories"])
