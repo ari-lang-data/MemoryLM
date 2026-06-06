@@ -5,3 +5,7 @@ memorylm.db
 __pycache__/
 *.pyc
 messages/
+graph.duckdb
+graph_backup.db
+graph.duckdb.wal
+graph.duckdb.tmp

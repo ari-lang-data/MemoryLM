@@ -1,0 +1,118 @@
+import duckdb
+import sqlite3
+import os
+from pathlib import Path
+from typing import Optional
+
+DUCKDB_PATH  = os.getenv("DUCKDB_PATH",  "./graph.duckdb")
+SQLITE_PATH  = os.getenv("SQLITE_GRAPH_PATH", "./graph_backup.db")
+
+_conn        = None
+_backend     = None  # "duckdb" | "sqlite"
+
+# ─── Schema ───────────────────────────────────────────────────────────────────
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS entities (
+    id           VARCHAR PRIMARY KEY,
+    name         VARCHAR NOT NULL,
+    type         VARCHAR NOT NULL,
+    description  TEXT    DEFAULT '',
+    chat_id      VARCHAR DEFAULT NULL,
+    preset_id    VARCHAR DEFAULT NULL,
+    embedding_id VARCHAR DEFAULT NULL,
+    created_at   VARCHAR NOT NULL,
+    metadata     VARCHAR DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS edges (
+    id           VARCHAR PRIMARY KEY,
+    source_id    VARCHAR NOT NULL,
+    target_id    VARCHAR NOT NULL,
+    relationship VARCHAR NOT NULL,
+    weight       FLOAT   DEFAULT 1.0,
+    created_at   VARCHAR NOT NULL,
+    metadata     VARCHAR DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS character_cards (
+    id             VARCHAR PRIMARY KEY,
+    appearance     TEXT    DEFAULT '',
+    behaviour      TEXT    DEFAULT '',
+    speech_pattern TEXT    DEFAULT '',
+    background     TEXT    DEFAULT '',
+    preset_id      VARCHAR DEFAULT NULL,
+    is_active_char BOOLEAN DEFAULT FALSE,
+    is_user_char   BOOLEAN DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS template_vars (
+    id         VARCHAR PRIMARY KEY,
+    var_name   VARCHAR NOT NULL,
+    entity_id  VARCHAR DEFAULT NULL,
+    preset_id  VARCHAR DEFAULT NULL,
+    created_at VARCHAR NOT NULL
+);
+"""
+
+# ─── Initialisation ───────────────────────────────────────────────────────────
+
+def _init_duckdb() -> duckdb.DuckDBPyConnection:
+    conn = duckdb.connect(DUCKDB_PATH)
+    conn.execute(SCHEMA)
+    return conn
+
+def _init_sqlite() -> sqlite3.Connection:
+    conn = sqlite3.connect(SQLITE_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA)
+    conn.commit()
+    return conn
+
+def get_graph_connection():
+    global _conn, _backend
+    if _conn is not None:
+        return _conn, _backend
+    try:
+        _conn    = _init_duckdb()
+        _backend = "duckdb"
+        print("Graph: DuckDB initialised")
+    except Exception as e:
+        _conn    = None
+        _backend = None
+        raise RuntimeError(f"GRAPH_INIT_FAILED:{e}")
+    return _conn, _backend
+
+def init_graph() -> str:
+    """Called on startup. Returns backend name or raises with failure message."""
+    global _conn, _backend
+    try:
+        _conn, _backend = get_graph_connection()
+        return _backend
+    except RuntimeError as e:
+        raise e
+
+def switch_to_sqlite():
+    """Called when user chooses option (b) — open SQLite backup."""
+    global _conn, _backend
+    _conn    = _init_sqlite()
+    _backend = "sqlite"
+    print("Graph: switched to SQLite backup")
+
+def execute(query: str, params: list = []):
+    conn, backend = get_graph_connection()
+    if backend == "duckdb":
+        result = conn.execute(query, params)
+        return result.fetchall()
+    else:
+        cursor = conn.execute(query, params)
+        conn.commit()
+        return cursor.fetchall()
+
+def executemany(query: str, params_list: list):
+    conn, backend = get_graph_connection()
+    if backend == "duckdb":
+        conn.executemany(query, params_list)
+    else:
+        conn.executemany(query, params_list)
+        conn.commit()
