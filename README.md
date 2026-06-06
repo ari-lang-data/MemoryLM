@@ -27,13 +27,21 @@ The same pipeline serves a **Lorebook** — a structured knowledge base of chara
 - 💬 Chat sidebar — slide-in panel for chat management with inline rename and delete
 - 🔍 Injection inspector — hover over the "N mem · N lore injected" line on any response to see exactly what context was retrieved, with memory scores and lorebook type indicators
 - 🧠 Reasoning parsing — infrastructure for stripping and displaying model reasoning traces when exposed by the inference server
+- 🌿 Branching — fork any message to explore an alternative direction, or use regenerate to create an inline branch; branches are navigable without leaving the chat
+- 🕸️ Entity graph — on-demand extraction builds a force-directed knowledge graph of characters, locations, and relationships, with graph-aware retrieval to surface contextually connected memories
+- 🎭 Character tab — roleplay presets support avatar images and character sheets; the character panel is scoped to roleplay mode while creative mode uses the research extraction pipeline
+- 📌 Pinning — individual memories and lorebook entries can be pinned to guarantee injection regardless of retrieval score
+- 🎯 Contextual retrieval — a heuristic classifier selects the retrieval mode (semantic, recency, hybrid, graph-traversal) based on the nature of each message
+- ⚖️ Importance heuristics + semantic clustering — memories are scored for importance at write time and clustered to reduce redundancy
+- 🔧 Template variables — system prompts support interpolated variables resolved at injection time
+- 📦 Full data export — export all chats, memories, lorebook entries, characters, and entity graphs as a single JSON package
 - ⚙️ Fully local — no cloud APIs, no telemetry
 
 ## Stack
 
 **Frontend:** React + Vite, `@xenova/transformers` (in-browser embeddings via MiniLM-L6-v2), `react-markdown`, `remark-math`, `rehype-katex`, `react-syntax-highlighter`
 
-**Backend:** FastAPI + ChromaDB + SQLite + JSON message storage
+**Backend:** FastAPI + ChromaDB + SQLite + DuckDB (entity graph, SQLite fallback) + JSON message storage
 
 ## Setup
 
@@ -69,6 +77,7 @@ Open `http://localhost:5173`. In Settings, set your LM Studio server URL (defaul
 | Lorebook | ChromaDB |
 | Presets | SQLite |
 | UI state | localStorage |
+| Entity graph | DuckDB (SQLite fallback) |
 
 ## Preset Styles
 
