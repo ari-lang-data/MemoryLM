@@ -7,6 +7,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
 import InjectionPanel from "./InjectionPanel";
+import { ArrowUp, FastForward } from "lucide-react";
 
 export default function Chat({chats,
         activeChatId,
@@ -64,6 +65,23 @@ export default function Chat({chats,
               parentId:     nodeId,
             };
           }
+          const RegenerateIcon = ({ size = 24, strokeWidth = 2.2, color = "var(--color-text-primary)", ...props }) => (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width={size}
+              height={size}
+              viewBox="-2 -1 24 24"
+              fill="none"
+              stroke={color}
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              {...props}
+            >
+              <path d="M12 4a8 8 0 1 1-11.5 3" />
+            <polyline points="10,8 10,2 15.5,2" />
+            </svg>
+          );
     return(
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", width: "100%", maxWidth: 800 }}>
 
@@ -212,14 +230,14 @@ export default function Chat({chats,
                     title={showContinuation && !input.trim() ? "Continue" : "Send"}
                     style={{ padding: "9px 14px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: loading || !input.trim() ? "transparent": "var(--color-send-button)", cursor: loading || (!input.trim() && !showContinuation) ? "not-allowed" : "pointer", color: "var(--color-text-primary)", fontSize: 16, opacity: loading || (!input.trim() && !showContinuation) ? 0.35 : 1 }}
                   >
-                    {showContinuation && !input.trim() ? "▶▶" : "↑"}
+                    {showContinuation && !input.trim() ? <FastForward size={16}/> : <ArrowUp size={16}/>}
                   </button>
                   <button
                     onClick={regenerate}
                     disabled={loading || messages.length < 2}
                     title="Regenerate last response"
                     style={{ padding: "9px 14px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", background: "transparent", cursor: loading || messages.length < 2 ? "not-allowed" : "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: loading || messages.length < 2 ? 0.35 : 1 }}
-                  >↺</button>
+                  ><RegenerateIcon size={16} color="var(--color-text-primary)" /></button>
                 </div>
               </div>
             </div>

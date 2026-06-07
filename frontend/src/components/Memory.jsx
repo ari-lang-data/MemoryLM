@@ -1,5 +1,6 @@
 import{Card} from "./ui/shared";
 import{inputStyle} from "../lib/constants";
+import { Pin, PinOff } from "lucide-react";
 export default function Memory({memories, memoryLog, config, addManualMemory, updateActiveChat, deleteMemory, toggleMemoryPin}){
     return(<div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 800 }}>
             <div style={{ display: "flex", gap: 8 }}>
@@ -15,14 +16,16 @@ export default function Memory({memories, memoryLog, config, addManualMemory, up
               ? <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 13, padding: 32 }}>No memories yet. Created automatically every {config.chunkEvery} turns.</div>
               : memories.slice().reverse().map(m => (
                 <Card key={m.id} style={{ borderLeft: m.pinned ? "2px solid var(--color-text-info)" : undefined }}>
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ display: "flex", gap: 8, }}>
                     <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65, flex: 1 }}>{m.summary}</p>
                     <button onClick={() => deleteMemory(m.id)} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 17, flexShrink: 0, alignSelf: "flex-start" }}>×</button>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexDirection: "column" }}>
                     <button
                       onClick={() => toggleMemoryPin(m.id, !m.pinned)}
-                      style={{ background: "transparent", border: "none", cursor: "pointer", color: m.pinned ? "var(--color-text-info)" : "var(--color-text-tertiary)", fontSize: 14 }}
+                      style={{ background: "transparent", border: "none", cursor: "pointer", color: m.pinned ? "var(--color-text-info)" : "var(--color-text-tertiary)", alignSelf: "flex-end" }}
                       title={m.pinned ? "Unpin" : "Pin — always inject"}
-                    >📌</button>
+                    >{m.pinned? <PinOff size={16}/>:<Pin size={16}/>}</button>
                   </div>
                   <div style={{ marginTop: 6, display: "flex", gap: 8 }}>
                     <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: "var(--border-radius-md)", background: m.source === "auto" ? "var(--color-background-info)" : "var(--color-background-success)", color: m.source === "auto" ? "var(--color-text-info)" : "var(--color-text-success)", border: "0.5px solid currentColor", opacity: 0.8 }}>{m.source}</span>

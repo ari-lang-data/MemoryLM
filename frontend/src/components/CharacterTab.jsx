@@ -2,8 +2,8 @@ import { useState, useRef } from "react";
 import { graphAPI } from "../lib/api";
 
 const RELATIONSHIP_TYPES = [
-  "friend of", "parent of", "child of", "teaches", "knows", "commands", "betrayed", "allies with", "rivals",
-  "lives at", "born in", "works for", "seeks", "owns",
+  "friend of", "parent of", "child of", "step-parent of", "step-child of", "teaches", "knows", "commands", "betrayed", "allies with", "rivals", "spouse of",
+  "lives at", "born in", "works for", "seeks", "owns", "household",
   "caused", "witnessed", "related to", "member of", "other"
 ];
 

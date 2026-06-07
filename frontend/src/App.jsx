@@ -43,12 +43,12 @@ import {Card,CardTitle,Row} from "./components/ui/shared";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  // FIX #1: consistent casing — activeChatId everywhere
   const [chats,          setChats]          = useState([]);
   const [memories, setMemories] = useState([]);
   const [editingMessage, setEditingMessage] = useState(null); // holds { index, draft }
   const [activeChatId,   setActiveChatId]   = useState(null);
   const [lorebook,       setLorebook]       = useState([]);
+  const [loreEdgePanel, setLoreEdgePanel] = useState(null); // { entry, edges }
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [input,          setInput]          = useState("");
   const [loading,        setLoading]        = useState(false);
@@ -69,23 +69,25 @@ export default function App() {
   const [activeCharId,  setActiveCharId]  = useState(null);
   const [userCharId,    setUserCharId]    = useState(null);
   const [extracting, setExtracting] = useState(false);
+  const [nodes,          setNodes]          = useState([]);
+  const [activeChildren, setActiveChildren] = useState({});
+  const [injectionPanel, setInjectionPanel] = useState({ visible: false, memData: [], loreData: [] });
   const [config, setConfig] = useState({
     chunkEvery: 4, topK: 4, threshold: 0.35, temperature: 0.7, repetitionPenalty: 1.0,
     autoSummarise: true, dedupMode: "merge", dedupThreshold: DEDUP_THRESHOLD, modelName: "", alpha: 0.7, decayRate: 0.01,
     style: "none", continuationPrompt: "Advance the narrative.", branchMode: "replace", contextWindow: 10,
   });
-
+  
+  const hoverTimerRef = useRef(null);
   const turnsSinceChunk = useRef(0);
   const messagesEndRef  = useRef(null);
   const configRef       = useRef(config);
   const lmUrlRef        = useRef(lmStudioUrl);
+  const activeChatIdRef = useRef(activeChatId);
+useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
   const nodesChatRef = useRef(null); // tracks which chat the current nodes belong to
 
   const activeChat = chats.find(c => c.id === activeChatId)?? chats[0];
-  const [nodes,          setNodes]          = useState([]);
-  const [activeChildren, setActiveChildren] = useState({});
-  const [injectionPanel, setInjectionPanel] = useState({ visible: false, memData: [], loreData: [] });
-  const hoverTimerRef = useRef(null);
   const messages = getActivePath(nodes, activeChildren)
 
   useEffect(() => { configRef.current  = config;      }, [config]);
@@ -435,7 +437,7 @@ export default function App() {
   const {status: embedderStatus, embed} = useEmbedder();
 
   // ── Summarise & store ───────────────────────────────────────────────────────
-  const {addManualMemory,summariseAndStore} = useMemory({configRef, lmUrlRef, activeChatId,addLog, setMemories})
+  const {addManualMemory,summariseAndStore} = useMemory({configRef, lmUrlRef, activeChatIdRef, addLog, setMemories})
 
   async function deleteMemory(id) {
     await memoriesAPI.delete(id);
@@ -528,13 +530,25 @@ export default function App() {
     setLorebook(prev => prev.map(e => e.id === id ? { ...e, pinned } : e));
   }
 
+  async function openLoreEdges(entry) {
+    const rawEdges = await graphAPI.getEdges(entry.id, "both");
+    const shaped   = await Promise.all(
+      rawEdges.map(async edge => {
+        const otherId = edge.source_id === entry.id ? edge.target_id : edge.source_id;
+        const entity  = await graphAPI.getEntity(otherId).catch(() => null);
+        return { edge, entity };
+      })
+    );
+    setLoreEdgePanel({ entry, edges: shaped });
+  }
+
   // ── Log ─────────────────────────────────────────────────────────────────────
   function addLog(msg) {
     setMemoryLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev.slice(0, 49)]);
   }
 
   // ── Chat Management ───────────────────────────────────────────────────────
-  async function sendMessageWith(history, parentId) {
+  async function sendMessageWith(history, parentId, isRegenerated=false) {
     const cfg = configRef.current;
     const activeChar = characters.find(c => c.id === activeCharId) ?? null;
     const userChar   = characters.find(c => c.id === userCharId)   ?? null;
@@ -662,7 +676,7 @@ export default function App() {
       finishReason: "stop", reasoning: null,
       injectedMems: relMems.length, injectedLore: relLore.length,
       injectedMemData: relMems, injectedLoreData: relLore,
-      implicit: false, timestamp: new Date().toISOString(),
+      implicit: false, timestamp: new Date().toISOString(), regenerated: false,
     };
 
     addNode(placeholder);
@@ -692,11 +706,13 @@ export default function App() {
     await messagesAPI.save(activeChatId, finalNodes, activeChildren);
 
     // Auto-summarise using active path
-    turnsSinceChunk.current += 1;
-    if (cfg.autoSummarise && turnsSinceChunk.current >= cfg.chunkEvery) {
-      turnsSinceChunk.current = 0;
-      const activePath = getActivePath(finalNodes, activeChildren);
-      summariseAndStore(activePath.slice(-cfg.chunkEvery * 2));
+    if(!isRegenerated){
+      turnsSinceChunk.current += 1;
+      if (cfg.autoSummarise && turnsSinceChunk.current >= cfg.chunkEvery) {
+        turnsSinceChunk.current = 0;
+        const activePath = getActivePath(finalNodes, activeChildren);
+        summariseAndStore(activePath.slice(-cfg.chunkEvery * 2));
+      }
     }
 
     // Title generation
@@ -735,6 +751,7 @@ export default function App() {
       content,
       implicit:  isImplicitContinuation,
       timestamp: new Date().toISOString(),
+      regenerate: false,
       finishReason: "stop",
       reasoning: null,
       injectedMems: 0, injectedLore: 0,
@@ -780,7 +797,7 @@ export default function App() {
     if (cfg.branchMode === "inline") {
       // Create a new sibling response — don't remove the old one
       setLoading(true);
-      try { await sendMessageWith(messages.slice(0, -1), lastUser.id); }
+      try { await sendMessageWith(messages.slice(0, -1), lastUser.id, true); }
       catch(e) {
         const errMsg = {
           id: `msg_${Date.now()}`, parentId: lastUser.id,
@@ -804,7 +821,7 @@ export default function App() {
         return next;
       });
       setLoading(true);
-      try { await sendMessageWith(messages.slice(0, -1), lastUser.id); }
+      try { await sendMessageWith(messages.slice(0, -1), lastUser.id, true); }
       catch(e) {
         const errMsg = {
           id: `msg_${Date.now()}`, parentId: lastUser.id,
@@ -1197,6 +1214,11 @@ export default function App() {
             addLorebookEntry={addLorebookEntry}
             deleteLorebookEntry={deleteLorebookEntry}
             toggleLorePin={toggleLorePin}
+            onOpenEdges={openLoreEdges}
+            loreEdgePanel={loreEdgePanel}
+            setLoreEdgePanel={setLoreEdgePanel}
+            entities={entities}
+            graphAPI={graphAPI}
           />
         )}
 

@@ -3,7 +3,7 @@ import { memoriesAPI } from "../lib/api";
 import useEmbedder from "./useEmbedder";
 import { parseReasoning } from "../lib/parseReasoning";
 
-export default function useMemory({ configRef, lmUrlRef, activeChatId, addLog, setMemories }) {
+export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, addLog, setMemories }) {
   const { embed } = useEmbedder();
 
   async function deduplicateAgainst(newSummary, newVec) {
@@ -80,7 +80,7 @@ export default function useMemory({ configRef, lmUrlRef, activeChatId, addLog, s
         0.75
       );
       
-      const updated = await memoriesAPI.getByChat(activeChatId);
+      const updated = await memoriesAPI.getByChat(activeChatIdRef);
       setMemories(updated);
       addLog(`Dedup: updated memory #${dedup.replaceId}`);
       return;
@@ -103,7 +103,7 @@ export default function useMemory({ configRef, lmUrlRef, activeChatId, addLog, s
       summary,
       0.75  // cluster threshold
     );
-    const updated = await memoriesAPI.getByChat(activeChatId);
+    const updated = await memoriesAPI.getByChat(activeChatIdRef);
     setMemories(updated);
     addLog(`Auto-summarised ${turns.length} turns → stored #${entry.id}`);
   }
@@ -121,7 +121,7 @@ export default function useMemory({ configRef, lmUrlRef, activeChatId, addLog, s
       turns:     0,
     };
     await memoriesAPI.add(entry);
-    const updated = await memoriesAPI.getByChat(activeChatId);
+    const updated = await memoriesAPI.getByChat(activeChatIdRef);
     setMemories(updated);
     addLog(`Manual memory stored #${entry.id}`);
   }
