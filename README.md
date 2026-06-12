@@ -34,6 +34,17 @@ The same pipeline serves a **Lorebook** — a structured knowledge base of chara
 - 🎯 Contextual retrieval — a heuristic classifier selects the retrieval mode (semantic, recency, hybrid, graph-traversal) based on the nature of each message
 - ⚖️ Importance heuristics + semantic clustering — memories are scored for importance at write time and clustered to reduce redundancy
 - 🔧 Template variables — system prompts support interpolated variables resolved at injection time
+- 🧩 Episodic inference — inferred narrative and technical states stored separately from memories; active states injected with confidence scores and maintained until contradictory evidence triggers resolution
+- 📋 Facts — discrete facts extracted from episodic memories stored in a dedicated table, distinct from inferences and summaries
+- 🎭 Preferred reference forms — characters carry narrative alias, formal address, and informal address fields; injected explicitly into the system prompt so local models refer to characters naturally rather than by full name
+- ⚙️ Combined Settings & Presets modal — gear icon in the chat sidebar footer opens a unified modal; presets and settings consolidated into a single interface
+- 🎨 Themes — Light, Dark, Sepia (warm library aesthetic), and Midnight (deep navy); switchable from Settings
+- ⌨️ Keyboard shortcuts — navigation, chat, graph, and character shortcuts throughout; F1 opens a reference modal
+- 🪟 Frosted glass panels — chat sidebar and injection panel use theme-aware frosted glass backgrounds computed via Fermi-Dirac function
+- 🔔 Confirmation modals — all destructive actions use a reusable modal rather than browser confirm dialogs
+- 🃏 Graph node hover cards — hovering a node in roleplay mode shows the character or lorebook card with avatar, fields, and reference forms
+- 💬 Group chat preview (experimental) — roleplay mode supports multi-character sessions; an evaluator routes responses between characters based on direct address or narrative context; currently unstable, full redesign planned for Phase 9
+- 🔗 Character-chat binding — the model's active character is bound to a chat on first message; restores automatically on chat switch and page reload, preventing cross-chat persona bleed
 - 📦 Full data export — export all chats, memories, lorebook entries, characters, and entity graphs as a single JSON package
 - ⚙️ Fully local — no cloud APIs, no telemetry
 
@@ -78,6 +89,7 @@ Open `http://localhost:5173`. In Settings, set your LM Studio server URL (defaul
 | Presets | SQLite |
 | UI state | localStorage |
 | Entity graph | DuckDB (SQLite fallback) |
+| Episodic inferences + facts | SQLite |
 
 ## Preset Styles
 
