@@ -41,7 +41,7 @@ def assign_to_cluster(body: ClusterAssign):
     best_cluster  = None
 
     if existing["ids"]:
-        embeddings = existing["embeddings"] or []
+        embeddings = existing["embeddings"] if existing.get("embeddings") is not None else []
         for cid, cemb, meta in zip(existing["ids"], embeddings, existing["metadatas"] or []):
             score = cosine_sim(body.embedding, cemb)
             if score > best_score:

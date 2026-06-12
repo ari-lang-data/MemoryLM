@@ -3,23 +3,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from database.sqlite import init_db
 from dotenv import load_dotenv
 import os
-from routers import memories, lorebook, chats, presets, messages, clusters
+from routers import memories, lorebook, chats, presets, messages, clusters, graph, episodic
 from database.graph import init_graph, switch_to_sqlite
 import sys
-from routers import memories, lorebook, chats, presets, messages, clusters, graph
 
 load_dotenv()
 
 app = FastAPI(title="MemoryLM Backend")
 
-app.include_router(messages.router, prefix="/messages", tags=["messages"])
-app.include_router(clusters.router, prefix="/clusters", tags=["clusters"])
-app.include_router(graph.router, prefix="/graph", tags=["graph"])
+app.include_router(messages.router,  prefix="/messages",  tags=["messages"])
+app.include_router(clusters.router,  prefix="/clusters",  tags=["clusters"])
+app.include_router(graph.router,     prefix="/graph",     tags=["graph"])
+app.include_router(episodic.router,  prefix="/episodic",  tags=["episodic"])
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("ALLOWED_ORIGIN", "http://localhost:5173")],  # Vite's default port
+    allow_origins=[os.getenv("ALLOWED_ORIGIN", "http://localhost:5173")],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -27,9 +27,8 @@ app.add_middleware(
 # ─── Startup ──────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 def on_startup():
-    init_db()  # SQLite for chats/presets
-    
-    # Graph initialisation with explicit failure handling
+    init_db()
+
     try:
         backend = init_graph()
         print(f"Graph backend: {backend}")
@@ -49,7 +48,6 @@ def on_startup():
         else:
             print("Please repair DuckDB and restart.")
             sys.exit(1)
-
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 app.include_router(memories.router,  prefix="/memories",  tags=["memories"])
