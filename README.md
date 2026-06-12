@@ -110,6 +110,38 @@ Recency ranking is also configurable per preset via `alpha` (similarity weight) 
 - LM Studio with a model loaded and local server running
 - Internet connection on first launch — downloads the MiniLM-L6-v2 embedding model (~25MB) from Hugging Face via CDN, cached by the browser after first use. Subsequent sessions work offline.
 
+## Keyboard Shortcuts
+Press `F1` for shortcuts modal.
+Current shortcuts include:
+### Navigation
+- Chats tab: Ctrl + 1
+- Memories tab: Ctrl + 2
+- Lorebook tab: Ctrl + 3
+- Graph tab: Ctrl + 6
+- Characters tab: Ctrl + 7
+### Search
+- Global search: Ctrl + K (pending implementation, resolution in phase 9)
+- Command palette: Ctrl + P (pending implementation, resolution in phase 9)
+### Chat
+- Send message: Enter
+- New line: Shift + Enter
+- Regenerate: Ctrl + Shift + Enter
+- Continue: Ctrl + Shift + F
+### Characters
+- New character: N
+- Edit selected: E
+- Delete selected: Del
+### Graph
+- Reset view: R
+- Fit graph: F
+- Show all: A
+- Concepts only: C
+- Characters only: H
+### General
+- Settings: Ctrl + ,
+- Keyboard shortcuts: F1
+- Close modal: Esc
+
 ## Credits
 
 Built in collaboration with [Claude](https://claude.ai) (Anthropic).
