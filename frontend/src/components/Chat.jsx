@@ -41,7 +41,7 @@ export default function Chat({chats,
         forkChat,
         branchMode,
         getSiblings,onExtractEntities,
-        extracting,
+        extracting, confirm, characters, pendingGroupTurn, onInvokeGroupTurn, onSkipGroupTurn
         }){
 
           const lastMsg         = messages[messages.length - 1];
@@ -83,9 +83,9 @@ export default function Chat({chats,
             </svg>
           );
     return(
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", width: "100%", maxWidth: 800 }}>
-
-            <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", width: "100%" }}>
+            <div style={{flex: 1, overflowY: "auto", width: "100%"}}>
+            <div style={{padding: 16, display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 800, margin: "0 auto", minHeight: "100%"}}>
               {messages.length === 0 && (
                 <div style={{ margin: "auto", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 14, padding: 32 }}>
                   <div style={{ fontSize: 32, marginBottom: 8 }}>🧠</div>
@@ -144,7 +144,7 @@ export default function Chat({chats,
                         </div>
                       ) : (
                         <div style={{ maxWidth: 680, display: "flex", flexDirection: "column", gap: 3, alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
-                          <div style={{ padding: "10px 14px", borderRadius: "var(--border-radius-lg)", background: m.role === "user" ? "var(--color-background-info)" : "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 14, lineHeight: 1.65, color: m.role === "user" ? "var(--color-text-info)" : "var(--color-text-primary)" }}>
+                          <div style={{ padding: "10px 14px", borderRadius: "var(--border-radius-lg)", background: m.role === "user" ? "var(--color-bubble-user)" : "var(--color-bubble-model)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 14, lineHeight: 1.65, color: m.role === "user" ? "var(--color-bubble-user-text)" : "var(--color-text-primary)" }}>
                             <ReactMarkdown
                               remarkPlugins={[remarkMath]}
                               rehypePlugins={[rehypeKatex]}
@@ -191,7 +191,7 @@ export default function Chat({chats,
                                 >⎇</button>
                             )}
                             <button
-                              onClick={() => { if (confirm("Delete this message?")) deleteMessage(m.id); }}
+                              onClick={async () => { if (await confirm("Delete this message?")) deleteMessage(m.id); }}
                               style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14, padding: "2px 4px" }}
                               title="Delete"
                             >×</button>
@@ -199,7 +199,7 @@ export default function Chat({chats,
 
                           {(m.injectedMems > 0 || m.injectedLore > 0) && (
                             <span
-                              onMouseEnter={() => onInjectionHover(m.injectedMemData ?? [], m.injectedLoreData ?? [])}
+                              onMouseEnter={() => onInjectionHover(m.injectedMemData ?? [], m.injectedLoreData ?? [], m.injectedInferenceData ?? [])}
                               onMouseLeave={onInjectionLeave}
                               style={{ fontSize: 11, color: "var(--color-text-tertiary)", cursor: "default" }}
                             >
@@ -213,8 +213,21 @@ export default function Chat({chats,
                 })}
               <div ref={messagesEndRef} />
             </div>
+            </div>
 
-            <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", display: "flex", justifyContent: "center", borderTopLeftRadius: "var(--border-radius-md)", borderTopRightRadius: "var(--border-radius-md)"}}>
+            <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", display: "flex", justifyContent: "center", borderTopLeftRadius: "var(--border-radius-lg)", borderTopRightRadius: "var(--border-radius-lg)", borderBottomLeftRadius: (config.style ==="roleplay" ? "var(--border-radius-lg)" : 0), borderBottomRightRadius: (config.style ==="roleplay" ? "var(--border-radius-lg)" : 0), alignSelf: "center",width: "100%", maxWidth: 800}}>
+              {pendingGroupTurn && (() => {
+                const char = characters?.find(c => c.id === pendingGroupTurn.charId);
+                return (
+                  <div style={{ padding: "8px 16px", background: "var(--color-background-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
+                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                      <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>{char?.name ?? "A character"}</span> might want to respond
+                    </span>
+                    <button onClick={onInvokeGroupTurn} style={{ fontSize: 12, padding: "3px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-primary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer" }}>Invoke</button>
+                    <button onClick={onSkipGroupTurn}   style={{ fontSize: 12, padding: "3px 10px", borderRadius: "var(--border-radius-md)", border: "none", background: "transparent", color: "var(--color-text-tertiary)", cursor: "pointer" }}>Skip</button>
+                  </div>
+                );
+              })()}
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", width: "100%", maxWidth: 680 }}>
                 <textarea
                   value={input}

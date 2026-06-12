@@ -3,7 +3,7 @@ export const RETRIEVAL_PROFILES = {
   creative: {
     alpha:      0.4,   // recency heavily weighted
     decayRate:  0.003, // slow decay — old events still matter
-    threshold:  0.15,  // broad retrieval
+    threshold:  0.3,
     lorebookThreshold: 0.3,
     topK:       6,
   },

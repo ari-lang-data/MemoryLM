@@ -1,4 +1,8 @@
 import { useState, useEffect, useRef } from "react";
+import { Settings as GearIcon } from "lucide-react";
+import { frostedGlassValues } from "../lib/fermiDirac";
+
+const { bgAlpha, blurPx, saturate } = frostedGlassValues();
 
 export default function ChatSidebar({ 
   isOpen, 
@@ -9,10 +13,12 @@ export default function ChatSidebar({
   onNewChat, 
   onDeleteChat,
   onRenameChat,
+  onOpenSettings,
 }) {
-  const [renamingId,    setRenamingId]    = useState(null);
-  const [renameDraft,   setRenameDraft]   = useState("");
-  const sidebarRef = useRef(null);
+  const [renamingId,  setRenamingId]  = useState(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const sidebarRef   = useRef(null);
+  const clickTimerRef = useRef(null);
 
   // Close on click outside
   useEffect(() => {
@@ -32,47 +38,41 @@ export default function ChatSidebar({
     setRenameDraft("");
   }
 
-  const clickTimerRef = useRef(null);
-
-    function handleChatClick(chatId) {
+  function handleChatClick(chatId) {
     if (clickTimerRef.current) {
-        // second click arrived before timeout — it's a double click, bail
-        clearTimeout(clickTimerRef.current);
-        clickTimerRef.current = null;
-        return;
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+      return;
     }
     clickTimerRef.current = setTimeout(() => {
-        clickTimerRef.current = null;
-        if (renamingId !== chatId) {
+      clickTimerRef.current = null;
+      if (renamingId !== chatId) {
         onSelectChat(chatId);
         onClose();
-        }
-    }, 220); // just long enough to detect double-click
-    }
+      }
+    }, 220);
+  }
 
-    function handleChatDoubleClick(e, chat) {
+  function handleChatDoubleClick(e, chat) {
     e.stopPropagation();
     if (clickTimerRef.current) {
-        clearTimeout(clickTimerRef.current);
-        clickTimerRef.current = null;
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
     }
     setRenamingId(chat.id);
     setRenameDraft(chat.title);
-    }
+  }
 
   return (
     <>
-      {/* Backdrop — subtle, only on narrow screens */}
+      {/* Backdrop */}
       {isOpen && (
         <div
           onClick={onClose}
           style={{
-            display: "none",
             position: "fixed", inset: 0,
-            background: "rgba(0,0,0,0.4)",
+            background: "transparent",
             zIndex: 99,
-            // show backdrop only on narrow screens
-            [`@media (max-width: 900px)`]: { display: "block" },
           }}
         />
       )}
@@ -81,32 +81,36 @@ export default function ChatSidebar({
       <div
         ref={sidebarRef}
         style={{
-          position:   "fixed",
-          top:        0,
-          left:       0,
-          bottom:     0,
-          width:      260,
-          background: "var(--color-background-primary)",
-          borderRight: "0.5px solid var(--color-border-tertiary)",
-          display:    "flex",
-          flexDirection: "column",
-          zIndex:     100,
-          transform:  isOpen ? "translateX(0)" : "translateX(-100%)",
-          transition: "transform 0.5s ease",
-          boxShadow:  isOpen ? "4px 0 24px rgba(0,0,0,0.3)" : "none",
+          position:        "fixed",
+          top:             0,
+          left:            0,
+          bottom:          0,
+          width:           260,
+          background:      `rgba(var(--glass-rgb), ${bgAlpha})`,
+          backdropFilter:  `blur(${blurPx}px) saturate(${saturate})`,
+          WebkitBackdropFilter: `blur(${blurPx}px) saturate(${saturate})`,
+          borderRight:     "0.5px solid rgba(255,255,255,0.07)",
+          display:         "flex",
+          flexDirection:   "column",
+          zIndex:          100,
+          transform:       isOpen ? "translateX(0)" : "translateX(-100%)",
+          transition:      "transform 0.5s ease",
+          boxShadow:       isOpen ? "4px 0 32px rgba(0,0,0,0.4)" : "none",
         }}
       >
-        {/* Sidebar header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)", flexShrink: 0 }}>
-          <span style={{ fontFamily:"Playfair Display",fontWeight: 700, fontSize: 17, letterSpacing: "-0.3px" }}>MemoryLM</span>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "0.5px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
+          <span style={{ fontFamily: "Playfair Display", fontWeight: 700, fontSize: 17, letterSpacing: "-0.3px" }}>MemoryLM</span>
         </div>
+
+        {/* Chats label + new button */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", flexShrink: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-secondary)" }}>Chats</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-secondary)" }}>Chats</span>
           <button
             onClick={onNewChat}
-            style={{ background: "transparent", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 13, padding: "3px 10px" }}
+            style={{ background: "transparent", border: "0.5px solid rgba(255,255,255,0.1)", borderRadius: "var(--border-radius-md)", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 13, padding: "3px 10px" }}
           >+ New</button>
-          </div>
+        </div>
 
         {/* Chat list */}
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
@@ -119,16 +123,16 @@ export default function ChatSidebar({
               onDoubleClick={e => handleChatDoubleClick(e, chat)}
               onClick={() => handleChatClick(chat.id)}
               style={{
-                display:        "flex",
-                alignItems:     "center",
-                gap:            6,
-                padding:        "8px 14px",
-                cursor:         "pointer",
-                background:     activeChatId === chat.id ? "var(--color-background-secondary)" : "transparent",
-                borderLeft:     activeChatId === chat.id ? "2px solid var(--color-text-primary)" : "2px solid transparent",
-                transition:     "background 0.1s",
+                display:    "flex",
+                alignItems: "center",
+                gap:        6,
+                padding:    "8px 14px",
+                cursor:     "pointer",
+                background: activeChatId === chat.id ? "rgba(255,255,255,0.06)" : "transparent",
+                borderLeft: activeChatId === chat.id ? "2px solid var(--color-text-primary)" : "2px solid transparent",
+                transition: "background 0.1s",
               }}
-              onMouseEnter={e => { if (activeChatId !== chat.id) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+              onMouseEnter={e => { if (activeChatId !== chat.id) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
               onMouseLeave={e => { if (activeChatId !== chat.id) e.currentTarget.style.background = "transparent"; }}
             >
               {renamingId === chat.id ? (
@@ -159,6 +163,37 @@ export default function ChatSidebar({
               >×</button>
             </div>
           ))}
+        </div>
+
+        {/* Footer — pinned gear icon */}
+        <div style={{
+          flexShrink:   0,
+          padding:      "10px 14px",
+          borderTop:    "0.5px solid rgba(255,255,255,0.06)",
+          display:      "flex",
+          alignItems:   "center",
+          justifyContent: "flex-end",
+        }}>
+          <button
+            onClick={() => { onClose(); onOpenSettings(); }}
+            title="Settings"
+            style={{
+              background:   "transparent",
+              border:       "none",
+              cursor:       "pointer",
+              color:        "var(--color-text-tertiary)",
+              display:      "flex",
+              alignItems:   "center",
+              justifyContent: "center",
+              padding:      6,
+              borderRadius: "var(--border-radius-md)",
+              transition:   "color 0.15s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = "var(--color-text-secondary)"}
+            onMouseLeave={e => e.currentTarget.style.color = "var(--color-text-tertiary)"}
+          >
+            <GearIcon size={16} />
+          </button>
         </div>
       </div>
     </>

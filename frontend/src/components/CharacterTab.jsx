@@ -45,6 +45,7 @@ async function resizeImage(dataUrl, maxSize = 128) {
 const EMPTY_DRAFT = {
   name: "", type: "character", description: "",
   appearance: "", behaviour: "", speech_pattern: "", background: "",
+  narrative_alias: "", address_formal: "", address_informal: "",
   metadata: {},
 };
 
@@ -60,7 +61,7 @@ export default function CharacterTab({
   setUserCharId,
   entities,
   setEntities,
-  inputStyle, charactersLoading
+  inputStyle, charactersLoading, onStartGroupChat
 }) {
   const [view,          setView]          = useState("list"); // "list" | "edit" | "edges"
   const [draft,         setDraft]         = useState(EMPTY_DRAFT);
@@ -83,14 +84,17 @@ export default function CharacterTab({
 
   function openEdit(char) {
     setDraft({
-      name:          char.name,
-      type:          char.type ?? "character",
-      description:   char.description ?? "",
-      appearance:    char.appearance ?? "",
-      behaviour:     char.behaviour ?? "",
-      speech_pattern: char.speech_pattern ?? "",
-      background:    char.background ?? "",
-      metadata:      typeof char.metadata === "string" ? JSON.parse(char.metadata) : (char.metadata ?? {}),
+      name:             char.name,
+      type:             char.type ?? "character",
+      description:      char.description ?? "",
+      appearance:       char.appearance ?? "",
+      behaviour:        char.behaviour ?? "",
+      speech_pattern:   char.speech_pattern ?? "",
+      background:       char.background ?? "",
+      narrative_alias:  char.narrative_alias ?? "",
+      address_formal:   char.address_formal ?? "",
+      address_informal: char.address_informal ?? "",
+      metadata:         typeof char.metadata === "string" ? JSON.parse(char.metadata) : (char.metadata ?? {}),
     });
     setEditingId(char.id);
     setView("edit");
@@ -140,13 +144,16 @@ export default function CharacterTab({
 
       // Upsert character card
       await graphAPI.upsertCharacter(id, {
-        appearance:     draft.appearance,
-        behaviour:      draft.behaviour,
-        speech_pattern: draft.speech_pattern,
-        background:     draft.background,
-        preset_id:      activePresetId,
-        is_active_char: false,
-        is_user_char:   false,
+        appearance:       draft.appearance,
+        behaviour:        draft.behaviour,
+        speech_pattern:   draft.speech_pattern,
+        background:       draft.background,
+        preset_id:        activePresetId,
+        is_active_char:   false,
+        is_user_char:     false,
+        narrative_alias:  draft.narrative_alias  || null,
+        address_formal:   draft.address_formal   || null,
+        address_informal: draft.address_informal || null,
       });
 
       // Refresh characters list
@@ -168,6 +175,36 @@ export default function CharacterTab({
   }
 
   async function activateCharacter(id, isUser = false) {
+    if (!isUser && activeCharId === id) {
+      // Deselect — clear active character
+      await graphAPI.activateCharacter(id, false); // will set FALSE below
+      // Set all to false for this preset
+      await fetch(`/graph/characters/${id}/deactivate`, { method: "PATCH" }).catch(() => null);
+      // Simpler: just update DB to false directly via upsert
+      const char = characters.find(c => c.id === id);
+      if (char) {
+        await graphAPI.upsertCharacter(id, {
+          appearance:     char.appearance     ?? "",
+          behaviour:      char.behaviour      ?? "",
+          speech_pattern: char.speech_pattern ?? "",
+          background:     char.background     ?? "",
+          preset_id:      activePresetId,
+          is_active_char: false,
+          is_user_char:   char.id === userCharId,
+          narrative_alias:  char.narrative_alias  ?? null,
+          address_formal:   char.address_formal   ?? null,
+          address_informal: char.address_informal ?? null,
+        });
+      }
+      const [updated, updatedVars] = await Promise.all([
+        graphAPI.getCharacters(activePresetId),
+        graphAPI.getTemplateVars(activePresetId),
+      ]);
+      setCharacters(updated ?? []);
+      setTemplateVars(updatedVars ?? []);
+      setActiveCharId(null);
+      return;
+    }
     await graphAPI.activateCharacter(id, isUser);
 
     // Auto-set template var
@@ -228,7 +265,12 @@ export default function CharacterTab({
         <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
             <p style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>Characters</p>
-            <button onClick={openNew} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "5px 10px" }}>+ New character</button>
+            <div style={{ display: "flex", gap: 6 }}>
+              {onStartGroupChat && (
+                <button onClick={onStartGroupChat} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "5px 10px" }}>⬡ Group chat</button>
+              )}
+              <button onClick={openNew} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "5px 10px" }}>+ New character</button>
+            </div>
           </div>
 
           {/* Template vars */}
@@ -359,6 +401,23 @@ export default function CharacterTab({
               />
             </div>
           ))}
+
+          {[
+            { key: "narrative_alias",  label: "Narrative alias",  placeholder: "How the narrator refers to them — e.g. \"Dumbledore\"" },
+            { key: "address_formal",   label: "Formal address",   placeholder: "How others address them formally — e.g. \"Professor Dumbledore\"" },
+            { key: "address_informal", label: "Informal address", placeholder: "How close characters address them — e.g. \"Albus\"" },
+          ].map(({ key, label, placeholder }) => (
+            <div key={key}>
+              <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</p>
+              <input
+                value={draft[key]}
+                onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))}
+                placeholder={placeholder}
+                style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
+              />
+            </div>
+          ))}
+
 
           <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             <button onClick={saveCharacter} disabled={!draft.name.trim() || saving} style={{ ...inputStyle, flex: 1, cursor: "pointer", textAlign: "center", opacity: (!draft.name.trim() || saving) ? 0.4 : 1 }}>

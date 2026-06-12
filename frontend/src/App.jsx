@@ -1,11 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI } from "./lib/api";
+import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI, episodicAPI } from "./lib/api";
 
 import useEmbedder from "./hooks/useEmbedder";
 import {parseReasoning} from "./lib/parseReasoning";
 import {getActivePath, getSiblings} from "./lib/branching";
 import { getRetrievalProfile } from "./lib/retrievalClassifier";
 import { resolveTemplate } from "./lib/templateResolver";
+import { useTheme }                  from "./hooks/useTheme";
+import { useConfirm }                from "./components/useConfirm";
+import { useKeyboardShortcuts }      from "./hooks/useKeyboardShortcuts";
+import KeyboardShortcutsModal        from "./components/KeyboardShortcutsModal";
+
 
 // ── LM fetch ────────────────────────────────────────────────────────────────
 import {lmFetch} from "./lib/lmFetch";
@@ -34,12 +39,12 @@ import {Card,CardTitle,Row} from "./components/ui/shared";
   import Chat from "./components/Chat";
   import Memory from "./components/Memory";
   import Lorebook from "./components/Lorebook";
-  import Presets from "./components/Presets";
-  import Settings from "./components/Settings";
+  import SettingsModal from "./components/SettingsModal"
   import ChatSidebar from "./components/ChatSidebar";
   import InjectionPanel from "./components/InjectionPanel";
   import CharacterTab from "./components/CharacterTab";
   import GraphPanel from "./components/GraphPanel";
+  import GroupChatSetupModal from "./components/GroupChatSetupModal";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -62,16 +67,22 @@ export default function App() {
   const [editingPreset,  setEditingPreset]  = useState(null);
   const [presetDraft,    setPresetDraft]    = useState(null);
   const [lmStudioUrl,    setLmStudioUrl]    = useState(DEFAULT_LM_STUDIO_URL);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [entities,      setEntities]      = useState([]);
   const [charactersLoading, setCharactersLoading] = useState(false);
   const [characters,    setCharacters]    = useState([]);
   const [templateVars,  setTemplateVars]  = useState([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeCharId,  setActiveCharId]  = useState(null);
   const [userCharId,    setUserCharId]    = useState(null);
+  const [groupChatMembers,    setGroupChatMembers]    = useState([]);
+  const [pendingGroupTurn,    setPendingGroupTurn]    = useState(null); // { charId, reason }
+  const [groupSetupOpen,      setGroupSetupOpen]      = useState(false);
+  const autoTurnCountRef = useRef(0);
   const [extracting, setExtracting] = useState(false);
   const [nodes,          setNodes]          = useState([]);
   const [activeChildren, setActiveChildren] = useState({});
-  const [injectionPanel, setInjectionPanel] = useState({ visible: false, memData: [], loreData: [] });
+  const [injectionPanel, setInjectionPanel] = useState({ visible: false, memData: [], loreData: [], inferenceData: [] });
   const [config, setConfig] = useState({
     chunkEvery: 4, topK: 4, threshold: 0.35, temperature: 0.7, repetitionPenalty: 1.0,
     autoSummarise: true, dedupMode: "merge", dedupThreshold: DEDUP_THRESHOLD, modelName: "", alpha: 0.7, decayRate: 0.01,
@@ -83,8 +94,9 @@ export default function App() {
   const messagesEndRef  = useRef(null);
   const configRef       = useRef(config);
   const lmUrlRef        = useRef(lmStudioUrl);
+  const chatNodesRef          = useRef(nodes);
+  const chatActiveChildrenRef = useRef(activeChildren);
   const activeChatIdRef = useRef(activeChatId);
-useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
   const nodesChatRef = useRef(null); // tracks which chat the current nodes belong to
 
   const activeChat = chats.find(c => c.id === activeChatId)?? chats[0];
@@ -92,6 +104,8 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
 
   useEffect(() => { configRef.current  = config;      }, [config]);
   useEffect(() => { lmUrlRef.current   = lmStudioUrl; }, [lmStudioUrl]);
+  useEffect(() => { chatNodesRef.current          = nodes;          }, [nodes]);
+  useEffect(() => { chatActiveChildrenRef.current = activeChildren; }, [activeChildren]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => {
     if (!activeChatId) return;
@@ -102,6 +116,22 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
     if (nodesChatRef.current !== activeChatId) return; // guard — don't save stale nodes
     messagesAPI.save(activeChatId, nodes, activeChildren).catch(console.error);
   }, [nodes, activeChildren, activeChatId]);
+  useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
+
+  const { theme, setTheme, themes } = useTheme();
+  const { confirm, ConfirmModalRenderer } = useConfirm();
+
+  useKeyboardShortcuts({
+    activePanel,
+    setActivePanel,
+    config,
+    onOpenSettings:   () => setSettingsOpen(true),
+    onOpenShortcuts:  () => setShortcutsOpen(true),
+    onRegenerate:     regenerate,
+    onFastForward:    sendMessage,
+    loading,
+  });
+
 
   // ── Boot ────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -114,39 +144,49 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
           lorebookAPI.getAll(),
         ]);
 
-        console.log("chats from API:", savedChats);
-        console.log("presets from API:", savedPresets);
-        console.log("lorebook from API:", savedLorebook);
-
         const savedActiveChat   = loadStorage(STORAGE_KEYS.activeChat);
         const savedActivePreset = loadStorage(STORAGE_KEYS.activePreset);
         const savedCfg          = loadStorage(STORAGE_KEYS.config);
 
-        console.log("activeChat from localStorage:", savedActiveChat);
-
+        // ── Chats ──────────────────────────────────────────────────────────
+        let activeChatResolved = null;
         if (savedChats?.length) {
-          const rehydrated = await Promise.all(
-            savedChats.map(async chat => ({
-              ...chat,
-              messages: await messagesAPI.get(chat.id).catch(() => []),
-            }))
-          );
-          setChats(rehydrated);
-          setActiveChatId(savedActiveChat ?? rehydrated[0].id);
+          setChats(savedChats);
+          activeChatResolved = savedActiveChat ?? savedChats[0].id;
+          setActiveChatId(activeChatResolved);
         }
 
+        // ── Lorebook ───────────────────────────────────────────────────────
         if (savedLorebook?.length) setLorebook(savedLorebook);
 
-        if (savedPresets?.length) setPresets(current => {
-          const backendIds = new Set(savedPresets.map(preset => preset.id));
-
+        // ── Presets ────────────────────────────────────────────────────────
+        if (savedPresets?.length) {
           const mergedPresets = DEFAULT_PRESETS.map(def => {
-            const saved = savedPresets?.find(p => p.id === def.id);
+            const saved = savedPresets.find(p => p.id === def.id);
             return saved ? { ...def, ...saved, config: { ...def.config, ...saved.config } } : def;
           });
           setPresets(mergedPresets);
-        });
+        }
 
+        // ── Config ─────────────────────────────────────────────────────────
+        if (savedCfg) {
+          if (savedCfg.config)       setConfig(c => ({ ...c, ...savedCfg.config }));
+          if (savedCfg.systemPrompt) setSystemPrompt(savedCfg.systemPrompt);
+          if (savedCfg.lmStudioUrl)  setLmStudioUrl(savedCfg.lmStudioUrl);
+        }
+
+        // ── Messages ───────────────────────────────────────────────────────
+        if (activeChatResolved) {
+          const savedMsgs = await messagesAPI.get(activeChatResolved);
+          if (savedMsgs) {
+            setNodes(savedMsgs.nodes ?? []);
+            setActiveChildren(savedMsgs.activeChildren ?? {});
+            nodesChatRef.current = activeChatResolved;
+          }
+        }
+
+        // ── Characters + bindings ──────────────────────────────────────────
+        // Load characters from preset first, then override from chat binding
         if (savedActivePreset) {
           setActivePreset(savedActivePreset);
           const preset = (savedPresets ?? DEFAULT_PRESETS).find(p => p.id === savedActivePreset);
@@ -157,25 +197,34 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
             ]);
             if (chars?.length)  setCharacters(chars);
             if (tvars?.length)  setTemplateVars(tvars);
-            const activeChar = chars?.find(c => c.is_active_char);
-            const userChar   = chars?.find(c => c.is_user_char);
-            if (activeChar) setActiveCharId(activeChar.id);
-            if (userChar)   setUserCharId(userChar.id);
+
+            // Check chat binding — takes precedence over preset defaults
+            const activeChat = savedChats?.find(c => c.id === activeChatResolved);
+            const bindings   = activeChat?.character_bindings ?? {};
+
+            if (bindings.chat_type === "group") {
+              setActiveCharId(null); // no persistent active char in group chats
+            } else if (bindings.active_char_id) {
+              setActiveCharId(bindings.active_char_id);
+            } else {
+              const activeChar = chars?.find(c => c.is_active_char);
+              if (activeChar) setActiveCharId(activeChar.id);
+            }
+
+            if (bindings.user_char_id) {
+              setUserCharId(bindings.user_char_id);
+            } else {
+              const userChar = chars?.find(c => c.is_user_char);
+              if (userChar) setUserCharId(userChar.id);
+            }
+
+            // Restore group chat members if applicable
+            if (bindings.chat_type === "group" && bindings.members?.length) {
+              setGroupChatMembers(bindings.members);
+            }
           }
         }
 
-        if (savedCfg) {
-          if (savedCfg.config)       setConfig(c => ({ ...c, ...savedCfg.config }));
-          if (savedCfg.systemPrompt) setSystemPrompt(savedCfg.systemPrompt);
-          if (savedCfg.lmStudioUrl)  setLmStudioUrl(savedCfg.lmStudioUrl);
-        }
-
-        const savedMsgs = await messagesAPI.get(savedActiveChat ?? savedChats[0].id);
-        if (savedMsgs) {
-          setNodes(savedMsgs.nodes ?? []);
-          setActiveChildren(savedMsgs.activeChildren ?? {});
-          nodesChatRef.current = savedActiveChat ?? savedChats[0]?.id ?? null;
-        }
       } catch(e) {
         console.error("Boot error:", e);
       }
@@ -346,6 +395,25 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
     nodesChatRef.current = null; // invalidate before loading
     setNodes([]);
     setActiveChildren({});
+    const chat = chats.find(c => c.id === id) ?? (await chatsAPI.getAll()).find(c => c.id === id);
+    const bindings = chat?.character_bindings ?? {};
+    if (bindings.active_char_id && bindings.active_char_id !== activeCharId) {
+        setCharactersLoading(true);
+        const [chars, tvars] = await Promise.all([
+            graphAPI.getCharacters(activePreset),
+            graphAPI.getTemplateVars(activePreset),
+        ]);
+        setCharacters(chars ?? []);
+        setTemplateVars(tvars ?? []);
+        setActiveCharId(bindings.active_char_id);
+        setUserCharId(bindings.user_char_id ?? null);
+        setCharactersLoading(false);
+    }
+    if (bindings.chat_type === "group" && bindings.members?.length) {
+      setGroupChatMembers(bindings.members);
+    } else {
+      setGroupChatMembers([]);
+    }
     setActiveChatId(id);
     saveStorage(STORAGE_KEYS.activeChat, id);
     const savedMsgs = await messagesAPI.get(id);
@@ -376,10 +444,8 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
     }
 
     setChats(remaining);
-
     if (activeChatId === id) {
-      setActiveChatId(remaining[0].id);
-      saveStorage(STORAGE_KEYS.activeChat, remaining[0].id);
+      await switchChat(remaining[0].id);
     }
   }
 
@@ -388,10 +454,10 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
     setChats(prev => prev.map(c => c.id === id ? { ...c, title } : c));
   }
 
-  function showInjectionPanel(memData, loreData) {
+  function showInjectionPanel(memData, loreData, inferenceData = []) {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
     hoverTimerRef.current = setTimeout(() => {
-      setInjectionPanel({ visible: true, memData, loreData });
+      setInjectionPanel({ visible: true, memData, loreData, inferenceData });
     }, 500);
   }
 
@@ -547,11 +613,13 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
     setMemoryLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev.slice(0, 49)]);
   }
 
-  // ── Chat Management ───────────────────────────────────────────────────────
-  async function sendMessageWith(history, parentId, isRegenerated=false) {
+  // ── Message Management ───────────────────────────────────────────────────────
+  async function sendMessageWith(history, parentId, isRegenerated=false, overrideCharId=null) {
     const cfg = configRef.current;
-    const activeChar = characters.find(c => c.id === activeCharId) ?? null;
-    const userChar   = characters.find(c => c.id === userCharId)   ?? null;
+    const effectiveCharId = overrideCharId ?? activeCharId;
+    if (overrideCharId && overrideCharId === userCharId) return; // never let model speak as user
+    const activeChar = characters.find(c => c.id === effectiveCharId) ?? null;
+    const userChar   = characters.find(c => c.id === userCharId) ?? null;
     const resolvedSystemPrompt = resolveTemplate(systemPrompt, activeChar, userChar);
     const last     = history[history.length - 1];
     const window = cfg.contextWindow ?? 0;
@@ -586,6 +654,10 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
       lorebookAPI.getPinned(),
     ]);
 
+    // Fetch active inferences for this chat
+    const activeInferences = await episodicAPI.getInferences(activeChatIdRef.current, "active")
+      .catch(() => []);
+
     // Dynamic retrieval using profile
     let retrievedMems = [];
     if (queryVec) {
@@ -599,17 +671,21 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
         const allMemories  = await memoriesAPI.getByChat(activeChatId);
         const byId         = Object.fromEntries(allMemories.map(m => [m.id, m]));
 
-        // For each cluster pick the member with highest importance + recency
         retrievedMems = clusterHits
-          .map(cluster => {
-            const members = cluster.members
-              .map(id => byId[id])
-              .filter(Boolean)
-              .sort((a, b) => (b.retrieval_count ?? 0) - (a.retrieval_count ?? 0));
-            return members[0];
-          })
-          .filter(Boolean)
-          .slice(0, profile.topK);
+        .map(cluster => {
+          const members = cluster.members
+            .map(id => byId[id])
+            .filter(Boolean)
+            .sort((a, b) => (b.retrieval_count ?? 0) - (a.retrieval_count ?? 0));
+          const mem = members[0];
+          if (!mem) return null;
+          // Attach a score so InjectionPanel has something to display.
+          // Cluster similarity isn't returned per-member, so we approximate
+          // using the cluster's own score if present, else flag as cluster-retrieved.
+          return { ...mem, score: cluster.score ?? null, via_cluster: true };
+        })
+        .filter(Boolean)
+        .slice(0, profile.topK);
       } else {
         // Fall back to direct retrieval if no clusters exist yet
         retrievedMems = await memoriesAPI.query(
@@ -639,15 +715,19 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
 
     // After merging pinned + retrieved:
     const now = new Date().toISOString();
-    retrievedMems.forEach(m => {
-      memoriesAPI.markRetrieved(m.id, now).catch(console.error);
-    });
+    if (!isRegenerated) {
+      retrievedMems.forEach(m => {
+        memoriesAPI.markRetrieved(m.id, now).catch(console.error);
+      });
+    }
 
     let injected = resolvedSystemPrompt;
     if (relMems.length > 0)
       injected += `\n\n[RECALLED MEMORIES — use naturally, do not cite directly]\n${relMems.map(m => `• ${m.summary}`).join("\n")}`;
     if (relLore.length > 0)
       injected += `\n\n[LOREBOOK — world/character context]\n${relLore.map(l => `[${(l.type ?? "ENTRY").toUpperCase()}] ${l.title}: ${l.content}`).join("\n")}`;
+    if (activeInferences.length > 0)
+      injected += `\n\n[ACTIVE STATES — maintain these consequences throughout]\n${activeInferences.map(inf => `• ${inf.state} (confidence: ${inf.confidence.toFixed(2)})`).join("\n")}`;
     if (relMems.length + relLore.length > 0)
       addLog(`Injected ${relMems.length} mem (${pinnedMems.length} pinned) + ${relLore.length} lore (${pinnedLore.length} pinned)`);
     if (activeChar) {
@@ -657,9 +737,14 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
         activeChar.speech_pattern && `Speech pattern: ${activeChar.speech_pattern}`,
         activeChar.background     && `Background: ${activeChar.background}`,
       ].filter(Boolean).join("\n");
+      const refForms = [
+        activeChar.narrative_alias  && `Refer to this character in narration as "${activeChar.narrative_alias}".`,
+        activeChar.address_formal   && `Characters who know them formally address them as "${activeChar.address_formal}".`,
+        activeChar.address_informal && `Characters close to them use "${activeChar.address_informal}".`,
+      ].filter(Boolean).join(" ");
 
-      if (charContext) {
-        injected += `\n\n[ACTIVE CHARACTER — embody this persona]\n${charContext}`;
+      if (charContext || refForms) {
+        injected += `\n\n[ACTIVE CHARACTER — embody this persona]\n${refForms ? refForms + "\n" : ""}${charContext}`;
       }
 
       // Walk character's edges for referenced entities
@@ -673,7 +758,7 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
     const placeholder   = {
       id: placeholderId, parentId,
       role: "assistant", content: "",
-      finishReason: "stop", reasoning: null,
+      finishReason: "stop", reasoning: null, injectedInferenceData: activeInferences,
       injectedMems: relMems.length, injectedLore: relLore.length,
       injectedMemData: relMems, injectedLoreData: relLore,
       implicit: false, timestamp: new Date().toISOString(), regenerated: false,
@@ -702,16 +787,46 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
     }));
 
     // Save final state
-    const finalNodes = [...nodes, placeholder];
-    await messagesAPI.save(activeChatId, finalNodes, activeChildren);
+    const finalNodes = [...chatNodesRef.current, placeholder];
+    await messagesAPI.save(activeChatId, finalNodes, chatActiveChildrenRef.current);
 
     // Auto-summarise using active path
     if(!isRegenerated){
       turnsSinceChunk.current += 1;
+      // Bind character on first message
+      const activePath = getActivePath(finalNodes, chatActiveChildrenRef.current);
+      if (activePath.filter(m => m.role === "user" && !m.implicit).length === 1 && activeCharId && groupChatMembers.length === 0) {
+          chatsAPI.bindCharacters(activeChatIdRef.current, {
+              active_char_id: activeCharId,
+              user_char_id:   userCharId ?? null,
+              chat_type:      "standard",
+              members:        [],
+          }).catch(console.error);
+      }
       if (cfg.autoSummarise && turnsSinceChunk.current >= cfg.chunkEvery) {
         turnsSinceChunk.current = 0;
         const activePath = getActivePath(finalNodes, activeChildren);
         summariseAndStore(activePath.slice(-cfg.chunkEvery * 2));
+      }
+    }
+    else{
+      if(turnsSinceChunk.current===0)
+        turnsSinceChunk.current=2; // to allow for updated memories with the regenerated message instead of from a stale one
+    }
+
+    // Group chat routing — only in roleplay mode with members set
+    if (!isRegenerated && groupChatMembers.length > 0 && autoTurnCountRef.current < 3) {
+      const evaluation = await runGroupEvaluator(reply ?? "", history);
+      if (evaluation) {
+        if (evaluation.reason === "direct_address") {
+          autoTurnCountRef.current += 1;
+          // Queue rather than recurse — let React commit current state first
+          setTimeout(() => {
+            invokeGroupTurn(evaluation.charId);
+          }, 50);
+        } else {
+          setPendingGroupTurn(evaluation);
+        }
       }
     }
 
@@ -729,6 +844,7 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
 
   async function sendMessage() {
     const cfg = configRef.current;
+    autoTurnCountRef.current = 0;
     const isImplicitContinuation =
       !input.trim() &&
       (cfg.style === "creative" || cfg.style === "roleplay" ||
@@ -966,6 +1082,79 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
     }
   }
 
+  async function runGroupEvaluator(lastReply, history) {
+    if (groupChatMembers.length < 2) return null;
+    const activeChar  = characters.find(c => c.id === activeCharId);
+    const memberChars = characters.filter(c => groupChatMembers.includes(c.id) && c.id !== activeCharId);
+    if (!memberChars.length) return null;
+
+    const memberList = memberChars.map(c => `${c.name} (id: ${c.id})`).join(", ");
+    const transcript = history.slice(-6).map(m => `${m.role === "user" ? "User" : activeChar?.name ?? "Model"}: ${m.content}`).join("\n");
+
+    const { content: raw } = await lmFetch(
+      [{
+        role: "user",
+        content: `Given this conversation and these available characters: ${memberList}
+        
+  Last reply: "${lastReply.slice(0, 300)}"
+
+  Recent transcript:
+  ${transcript}
+
+  Should any of the available characters speak next? Reply ONLY with valid JSON, no preamble:
+  { "shouldSpeak": true|false, "charId": "character_id_or_null", "reason": "direct_address|narrative|none" }
+
+  Rules:
+  - direct_address: a character was explicitly spoken to by name
+  - narrative: a character would naturally respond given the story context
+  - Be conservative — default to false if unclear`,
+      }],
+      "You are a narrative routing assistant. Decide if a character should speak. Return only JSON.",
+      configRef, lmUrlRef, null, 200
+    );
+
+    try {
+      const clean  = raw.replace(/```json|```/g, "").trim();
+      const result = JSON.parse(clean);
+      if (!result.shouldSpeak || !result.charId) return null;
+      // Verify charId is actually a group member
+      if (!groupChatMembers.includes(result.charId)) return null;
+      return { charId: result.charId, reason: result.reason };
+    } catch {
+      return null;
+    }
+  }
+
+  async function invokeGroupTurn(charId) {
+    if (!charId || charId === userCharId) return;
+    setLoading(true);
+    try {
+      const history = getActivePath(chatNodesRef.current, chatActiveChildrenRef.current)
+        .filter(m => !m.implicit)
+        .map(m => ({ role: m.role, content: m.content }));
+      const lastId = chatNodesRef.current[chatNodesRef.current.length - 1]?.id ?? null;
+      await sendMessageWith(history, lastId, false, charId);
+    } finally {
+      setLoading(false);
+      autoTurnCountRef.current = 0;
+    }
+  }
+
+  async function startGroupChat(memberIds) {
+    setGroupSetupOpen(false);
+    await createNewChat();
+    setGroupChatMembers(memberIds);
+    // Bind immediately since members are known upfront
+    const newChatId = activeChatIdRef.current;
+    await chatsAPI.bindCharacters(newChatId, {
+      active_char_id: null,  // intentionally unbound — rotates per turn
+      user_char_id:   userCharId ?? null,
+      chat_type:      "group",
+      members:        memberIds,
+    });
+    setSidebarOpen(false);
+  }
+
   // ── Presets ─────────────────────────────────────────────────────────────────
   async function applyPreset(preset) {
     setSystemPrompt(preset.systemPrompt);
@@ -1067,6 +1256,7 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
         onNewChat={() => { createNewChat(); setSidebarOpen(false); }}
         onDeleteChat={deleteChat}
         onRenameChat={renameChat}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)", flexShrink: 0 }}>
@@ -1077,7 +1267,7 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
           MemoryLM
         </button>
         <div style={{ display: "flex", gap: 3, marginLeft: 6 }}>
-          {["chat","memory","lorebook","presets","settings", "graph"].map(p => (
+          {["chat","memory","lorebook","graph"].map(p => (
             <button key={p} onClick={() => setActivePanel(p)} style={{ padding: "4px 11px", fontSize: 12, borderRadius: "var(--border-radius-md)", border: activePanel === p ? "0.5px solid var(--color-border-primary)" : "0.5px solid transparent", background: activePanel === p ? "var(--color-background-secondary)" : "transparent", color: activePanel === p ? "var(--color-text-primary)" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: activePanel === p ? 500 : 400 }}>
               {p.charAt(0).toUpperCase() + p.slice(1)}
             </button>
@@ -1100,14 +1290,21 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
               ? JSON.parse(activeChar.metadata)
               : (activeChar?.metadata ?? {});
 
-            if (activeChar && config?.style==="roleplay") {
+            if (activeChar && config?.style === "roleplay") {
+              const groupChars = groupChatMembers.length > 0
+                ? characters.filter(c => groupChatMembers.includes(c.id))
+                : [activeChar];
               return (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 8px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
-                  {meta.avatar
-                    ? <img src={meta.avatar} style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
-                    : <div style={{ width: 18, height: 18, borderRadius: "50%", background: "var(--color-background-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--color-text-tertiary)", flexShrink: 0 }}>{activeChar.name?.charAt(0)?.toUpperCase()}</div>
-                  }
-                  <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{activeChar.name}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
+                  {groupChars.map(c => {
+                    const m = typeof c.metadata === "string" ? JSON.parse(c.metadata) : (c.metadata ?? {});
+                    return m.avatar
+                      ? <img key={c.id} src={m.avatar} style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} title={c.name} />
+                      : <div key={c.id} style={{ width: 18, height: 18, borderRadius: "50%", background: "var(--color-background-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--color-text-tertiary)", flexShrink: 0 }} title={c.name}>{c.name?.charAt(0)?.toUpperCase()}</div>;
+                  })}
+                  {groupChatMembers.length === 0 && (
+                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)", marginLeft: 4 }}>{activeChar.name}</span>
+                  )}
                 </div>
               );
             }
@@ -1167,6 +1364,16 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
             getSiblings={getSiblings}
             onExtractEntities={extractEntities}
             extracting={extracting}
+            confirm={confirm}
+            pendingGroupTurn={pendingGroupTurn}
+            characters={characters}
+            onInvokeGroupTurn={async () => {
+              if (!pendingGroupTurn) return;
+              setPendingGroupTurn(null);
+              autoTurnCountRef.current += 1;
+              await invokeGroupTurn(pendingGroupTurn.charId);
+            }}
+            onSkipGroupTurn={() => setPendingGroupTurn(null)}
           />
         )}
 
@@ -1186,6 +1393,7 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
             setEntities={setEntities}
             inputStyle={inputStyle}
             charactersLoading={charactersLoading}
+            onStartGroupChat={config?.style === "roleplay" ? () => setGroupSetupOpen(true) : undefined}
           />
         )}
 
@@ -1222,53 +1430,61 @@ useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
           />
         )}
 
-        {/* ── PRESETS ── */}
-        {activePanel === "presets" && (
-          <Presets
-            presets={presets}
-            activePreset={activePreset}
-            applyPreset={applyPreset}
-            updatePresetConfig={updatePresetConfig}
-            updatePresetPrompt={updatePresetPrompt}
-          />
-        )}
-
-        {/* ── SETTINGS ── */}
-        {activePanel === "settings" && (
-          <Settings
-            config={config}
-            lmStudioUrl={lmStudioUrl}
-            setLmStudioUrl={setLmStudioUrl}
-            setConfig={setConfig}
-            systemPrompt={systemPrompt}
-            setSystemPrompt={setSystemPrompt}
-            persistConfig={persistConfig}
-            lorebook={lorebook}
-            setLorebook={setLorebook}
-            setNodes={setNodes}
-            setActiveChildren={setActiveChildren} 
-            setMemories={setMemories} 
-            activeChatId={activeChatId}
-            graphAPI={graphAPI}
-          />
-        )}
-
         {activePanel === "graph" && (
           <GraphPanel
             activeChatId={activeChatId}
             activePresetId={activePreset}
             activePreset={activePreset}
+            isRoleplay={config?.style === "roleplay"}
           />
         )}
-
       </div>
       <InjectionPanel
         visible={injectionPanel.visible}
         memData={injectionPanel.memData}
         loreData={injectionPanel.loreData}
+        inferenceData={injectionPanel.inferenceData ?? []}
         onMouseEnter={keepPanelOpen}
         onMouseLeave={hideInjectionPanel}
       />
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        lmStudioUrl={lmStudioUrl}
+        setLmStudioUrl={setLmStudioUrl}
+        config={config}
+        setConfig={setConfig}
+        persistConfig={persistConfig}
+        systemPrompt={systemPrompt}
+        setSystemPrompt={setSystemPrompt}
+        lorebook={lorebook}
+        setLorebook={setLorebook}
+        activeChatId={activeChatId}
+        setNodes={setNodes}
+        setActiveChildren={setActiveChildren}
+        setMemories={setMemories}
+        graphAPI={graphAPI}
+        presets={presets}
+        activePreset={activePreset}
+        applyPreset={applyPreset}
+        updatePresetConfig={updatePresetConfig}
+        updatePresetPrompt={updatePresetPrompt}
+        theme={theme} 
+        setTheme={setTheme} 
+        themes={themes}
+        confirm={confirm}
+      />
+      {groupSetupOpen && (
+        <GroupChatSetupModal
+          characters={characters}
+          activeCharId={activeCharId}
+          userCharId={userCharId}
+          onStart={startGroupChat}
+          onCancel={() => setGroupSetupOpen(false)}
+        />
+      )}
+      {ConfirmModalRenderer()}
+      {shortcutsOpen && <KeyboardShortcutsModal onClose={() => setShortcutsOpen(false)} />}
     </div>
   );
 }

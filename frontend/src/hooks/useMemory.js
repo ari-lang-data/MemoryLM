@@ -1,5 +1,5 @@
 import { lmFetch } from "../lib/lmFetch";
-import { memoriesAPI } from "../lib/api";
+import { memoriesAPI, clustersAPI } from "../lib/api";
 import useEmbedder from "./useEmbedder";
 import { parseReasoning } from "../lib/parseReasoning";
 
@@ -12,7 +12,7 @@ export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, addLog
 
     // ChromaDB does the similarity search — no local cosineSim needed
     const near = await memoriesAPI.query(
-      activeChatId,
+      activeChatIdRef.current,
       newVec,
       1,                      // only need the closest match
       cfg.dedupThreshold,
@@ -74,13 +74,13 @@ export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, addLog
 
       await clustersAPI.assign(
         dedup.replaceId,
-        activeChatId,
+        activeChatIdRef.current,
         dedup.mergedVec,
         dedup.merged,
         0.75
       );
       
-      const updated = await memoriesAPI.getByChat(activeChatIdRef);
+      const updated = await memoriesAPI.getByChat(activeChatIdRef.current);
       setMemories(updated);
       addLog(`Dedup: updated memory #${dedup.replaceId}`);
       return;
@@ -88,7 +88,7 @@ export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, addLog
 
     const entry = {
       id:        `mem_${Date.now()}`,
-      chat_id:   activeChatId,
+      chat_id:   activeChatIdRef.current,
       summary,
       embedding: vec,
       source:    "auto",
@@ -98,12 +98,12 @@ export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, addLog
     await memoriesAPI.add(entry);
     await clustersAPI.assign(
       entry.id,
-      activeChatId,
+      activeChatIdRef.current,
       vec,
       summary,
       0.75  // cluster threshold
     );
-    const updated = await memoriesAPI.getByChat(activeChatIdRef);
+    const updated = await memoriesAPI.getByChat(activeChatIdRef.current);
     setMemories(updated);
     addLog(`Auto-summarised ${turns.length} turns → stored #${entry.id}`);
   }
@@ -113,7 +113,7 @@ export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, addLog
     if (!vec) return;
     const entry = {
       id:        `mem_${Date.now()}`,
-      chat_id:   activeChatId,
+      chat_id:   activeChatIdRef.current,
       summary:   text,
       embedding: vec,
       source:    "manual",
@@ -121,7 +121,7 @@ export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, addLog
       turns:     0,
     };
     await memoriesAPI.add(entry);
-    const updated = await memoriesAPI.getByChat(activeChatIdRef);
+    const updated = await memoriesAPI.getByChat(activeChatIdRef.current);
     setMemories(updated);
     addLog(`Manual memory stored #${entry.id}`);
   }
