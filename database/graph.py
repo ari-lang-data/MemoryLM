@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS character_cards (
     is_user_char      BOOLEAN DEFAULT FALSE,
     narrative_alias   VARCHAR DEFAULT NULL,
     address_formal    VARCHAR DEFAULT NULL,
-    address_informal  VARCHAR DEFAULT NULL
+    address_informal  VARCHAR DEFAULT NULL,
+    bias  FLOAT       DEFAULT 0.5
 );
 
 CREATE TABLE IF NOT EXISTS template_vars (
@@ -74,6 +75,10 @@ MIGRATIONS = [
     (
         "character_cards: add address_informal",
         "ALTER TABLE character_cards ADD COLUMN address_informal VARCHAR DEFAULT NULL",
+    ),
+    (
+        "character_cards: add bias",
+        "ALTER TABLE character_cards ADD COLUMN bias FLOAT DEFAULT 0.5",
     ),
 ]
 

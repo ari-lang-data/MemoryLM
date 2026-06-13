@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 import os
 from routers import memories, lorebook, chats, presets, messages, clusters, graph, episodic
 from database.graph import init_graph, switch_to_sqlite
+from routers import events
+from database.queue_processor import ensure_processor
+from database.queue import enqueue as queue_enqueue
 import sys
 
 load_dotenv()
@@ -54,6 +57,7 @@ app.include_router(memories.router,  prefix="/memories",  tags=["memories"])
 app.include_router(lorebook.router,  prefix="/lorebook",  tags=["lorebook"])
 app.include_router(chats.router,     prefix="/chats",     tags=["chats"])
 app.include_router(presets.router,   prefix="/presets",   tags=["presets"])
+app.include_router(events.router, prefix="/events", tags=["events"])
 
 # ─── Health check ─────────────────────────────────────────────────────────────
 @app.get("/")

@@ -54,7 +54,7 @@ ENTITY_COLS = ["id","name","type","description","chat_id","preset_id","embedding
 CHARACTER_COLS = [
     "id","name","type","description","chat_id","preset_id","embedding_id","created_at","metadata",
     "appearance","behaviour","speech_pattern","background","is_active_char","is_user_char",
-    "narrative_alias","address_formal","address_informal",
+    "narrative_alias","address_formal","address_informal", "bias",
 ]
 
 # ─── Entity routes ─────────────────────────────────────────────────────────────
@@ -150,13 +150,13 @@ def upsert_character_card(entity_id: str, body: CharacterCardUpdate):
         """INSERT OR REPLACE INTO character_cards
            (id, appearance, behaviour, speech_pattern, background,
             preset_id, is_active_char, is_user_char,
-            narrative_alias, address_formal, address_informal)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            narrative_alias, address_formal, address_informal, bias)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             entity_id,
             body.appearance, body.behaviour, body.speech_pattern, body.background,
             body.preset_id, body.is_active_char, body.is_user_char,
-            body.narrative_alias, body.address_formal, body.address_informal,
+            body.narrative_alias, body.address_formal, body.address_informal, body.bias
         ]
     )
     return SuccessResponse()

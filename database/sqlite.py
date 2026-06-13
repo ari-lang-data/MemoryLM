@@ -13,6 +13,7 @@ class Chat(SQLModel, table=True):
     title: str = Field(default="New Chat")
     chat_type:           str = Field(default="standard")
     character_bindings:  str = Field(default="{}")  # JSON
+    activation_state: str = Field(default="{}")
     created_at: str
     updated_at: str
 
@@ -70,6 +71,7 @@ def init_db():
         for col, definition in [
             ("chat_type",          "VARCHAR DEFAULT 'standard'"),
             ("character_bindings", "VARCHAR DEFAULT '{}'"),
+            ("activation_state", "VARCHAR DEFAULT '{}'"),
         ]:
             try:
                 conn.execute(text(f"ALTER TABLE chat ADD COLUMN {col} {definition}"))

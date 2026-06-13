@@ -192,6 +192,7 @@ class CharacterCardUpdate(BaseModel):
     narrative_alias:   Optional[str]  = None   # narrator voice: "Dumbledore"
     address_formal:    Optional[str]  = None   # formal address: "Professor Dumbledore"
     address_informal:  Optional[str]  = None   # informal address: "Albus"
+    bias: float = 0.5
 
 # ─── Generic responses ────────────────────────────────────────────────────────
 
