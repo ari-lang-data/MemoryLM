@@ -117,3 +117,20 @@ export const episodicAPI = {
   getFact:     (id)      => request("GET",    `/episodic/facts/${id}`),
   deleteFact:  (id)      => request("DELETE", `/episodic/facts/${id}`),
 };
+
+// ─── Events ─────────────────────────────────────────────────────────────────
+export const eventsAPI = {
+  enqueue: (body) => request("POST", "/events/enqueue", body),
+  // SSE connection is handled directly via EventSource, not fetch
+  connect: (chat_id, since, handlers) => {
+    const url = `${BASE_URL}/events/stream/${chat_id}${since ? `?since=${since}` : ""}`;
+    const es  = new EventSource(url);
+    Object.entries(handlers).forEach(([event, handler]) => {
+      es.addEventListener(event, e => handler(JSON.parse(e.data)));
+    });
+    es.onerror = () => {
+      // Reconnect handled automatically by EventSource
+    };
+    return es; // caller holds reference and calls es.close() on unmount
+  },
+};

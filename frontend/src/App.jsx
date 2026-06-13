@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI, episodicAPI } from "./lib/api";
 
 import useEmbedder from "./hooks/useEmbedder";
+import { useEventQueue } from "./hooks/useEventQueue";
 import {parseReasoning} from "./lib/parseReasoning";
 import {getActivePath, getSiblings} from "./lib/branching";
 import { getRetrievalProfile } from "./lib/retrievalClassifier";
@@ -235,7 +236,7 @@ export default function App() {
   function persistConfig(cfg, sysprompt, url) {
     saveStorage(STORAGE_KEYS.config, { config: cfg, systemPrompt: sysprompt, lmStudioUrl: url });
   }
-
+  // ── Entities ────────────────────────────────────────────────────────────────
   async function extractEntities() {
     if (extracting || messages.length === 0) return;
     setExtracting(true);
@@ -505,11 +506,74 @@ export default function App() {
   // ── Summarise & store ───────────────────────────────────────────────────────
   const {addManualMemory,summariseAndStore} = useMemory({configRef, lmUrlRef, activeChatIdRef, addLog, setMemories})
 
+  // ―― Events ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+  const { enqueue: enqueueEvent } = useEventQueue(activeChatId, {
+    turn_start: ({ char_id, node_id, reason }) => {
+      // Create placeholder node for incoming group turn
+      const char = characters.find(c => c.id === char_id);
+      addNode({
+        id:          node_id,
+        parentId:    chatNodesRef.current[chatNodesRef.current.length - 1]?.id ?? null,
+        role:        "assistant",
+        content:     "",
+        char_id,
+        char_name:   char?.name ?? null,
+        finishReason: "stop",
+        reasoning:   null,
+        injectedMems: 0, injectedLore: 0,
+        injectedMemData: [], injectedLoreData: [],
+        implicit:    false,
+        timestamp:   new Date().toISOString(),
+        regenerated: false,
+      });
+    },
+
+    token: ({ node_id, content }) => {
+      updateNode(node_id, n => ({ ...n, content: n.content + content }));
+    },
+
+    turn_completed: ({ char_id, node_id, content }) => {
+      updateNode(node_id, n => ({ ...n, content, finishReason: "stop" }));
+      // Save after each completed turn
+      messagesAPI.save(
+        activeChatIdRef.current,
+        chatNodesRef.current,
+        chatActiveChildrenRef.current,
+      ).catch(console.error);
+      // Discharge is handled by the backend
+    },
+
+    turn_dropped: ({ reason, task }) => {
+      addLog(`Turn dropped: ${task ?? "unknown"} — ${reason}`);
+      setLoading(false);
+    },
+
+    speaker_queued: ({ char_id, priority, reason }) => {
+      const char = characters.find(c => c.id === char_id);
+      addLog(`Speaker queued: ${char?.name ?? char_id} (${reason}, priority ${priority.toFixed(2)})`);
+    },
+
+    scene_pause: () => {
+      setLoading(false);
+    },
+
+    queue_end: () => {
+      setLoading(false);
+    },
+  });
+
+  // ── Memory ───────────────────────────────────────────────────────
   async function deleteMemory(id) {
     await memoriesAPI.delete(id);
     setMemories(prev => prev.filter(m => m.id !== id));
   }
 
+  async function toggleMemoryPin(id, pinned) {
+    await memoriesAPI.pin(id, pinned);
+    setMemories(prev => prev.map(m => m.id === id ? { ...m, pinned } : m));
+  }
+
+  // ── Chat title ───────────────────────────────────────────────────────
   async function generateChatTitle(messages) {
     const sample = messages
       .slice(0, 6)
@@ -535,11 +599,6 @@ export default function App() {
       ?.replace(/^["']|["']$/g, "")
       ?.trim()
       ?.slice(0, 60);
-  }
-
-  async function toggleMemoryPin(id, pinned) {
-    await memoriesAPI.pin(id, pinned);
-    setMemories(prev => prev.map(m => m.id === id ? { ...m, pinned } : m));
   }
 
   // ── Lorebook ────────────────────────────────────────────────────────────────
@@ -614,82 +673,49 @@ export default function App() {
   }
 
   // ── Message Management ───────────────────────────────────────────────────────
-  async function sendMessageWith(history, parentId, isRegenerated=false, overrideCharId=null) {
-    const cfg = configRef.current;
+  async function buildInjectedContext(queryVec, content, overrideCharId = null) {
+    const cfg        = configRef.current;
     const effectiveCharId = overrideCharId ?? activeCharId;
-    if (overrideCharId && overrideCharId === userCharId) return; // never let model speak as user
     const activeChar = characters.find(c => c.id === effectiveCharId) ?? null;
     const userChar   = characters.find(c => c.id === userCharId) ?? null;
-    const resolvedSystemPrompt = resolveTemplate(systemPrompt, activeChar, userChar);
-    const last     = history[history.length - 1];
-    const window = cfg.contextWindow ?? 0;
-    const windowedHistory = window > 0
-      ? history.slice(-window * 2)  // *2 because each turn is user+assistant
-      : history;
+    const resolved   = resolveTemplate(systemPrompt, activeChar, userChar);
 
-    const queryContent = last.implicit
-      ? history.filter(m => !m.implicit).slice(-3).map(m => m.content).join(" ")
-      : last.content;
-
-    const queryVec = await embed(queryContent);
-
-    // Get retrieval profile based on context
     const profile = getRetrievalProfile(
-      { content: queryContent },
+      { content },
       cfg.style ?? "none",
       { alpha: cfg.alpha, decayRate: cfg.decayRate }
     );
 
     addLog(`Retrieval context: ${profile.context}`);
 
-    // After character context injection, for non-creative presets:
-    if (!["creative", "roleplay"].includes(cfg.style ?? "none") && entities.length > 0) {
-      const graphContext = await buildResearchContext(queryContent);
-      if (graphContext) injected += `\n\n[KNOWLEDGE GRAPH]\n${graphContext}`;
-    }
-
-    // Pinned items — always injected
-    const [pinnedMems, pinnedLore] = await Promise.all([
-      memoriesAPI.getPinned(activeChatId),
+    const [pinnedMems, pinnedLore, activeInferences] = await Promise.all([
+      memoriesAPI.getPinned(activeChatIdRef.current),
       lorebookAPI.getPinned(),
+      episodicAPI.getInferences(activeChatIdRef.current, "active").catch(() => []),
     ]);
 
-    // Fetch active inferences for this chat
-    const activeInferences = await episodicAPI.getInferences(activeChatIdRef.current, "active")
-      .catch(() => []);
-
-    // Dynamic retrieval using profile
     let retrievedMems = [];
     if (queryVec) {
       const clusterHits = await clustersAPI.query(
-        activeChatId, queryVec, profile.topK, profile.threshold
+        activeChatIdRef.current, queryVec, profile.topK, profile.threshold
       );
-
       if (clusterHits.length > 0) {
-        // Get best memory from each cluster
-        const allMemberIds = clusterHits.flatMap(c => c.members);
-        const allMemories  = await memoriesAPI.getByChat(activeChatId);
-        const byId         = Object.fromEntries(allMemories.map(m => [m.id, m]));
-
-        retrievedMems = clusterHits
-        .map(cluster => {
-          const members = cluster.members
-            .map(id => byId[id])
-            .filter(Boolean)
-            .sort((a, b) => (b.retrieval_count ?? 0) - (a.retrieval_count ?? 0));
-          const mem = members[0];
-          if (!mem) return null;
-          // Attach a score so InjectionPanel has something to display.
-          // Cluster similarity isn't returned per-member, so we approximate
-          // using the cluster's own score if present, else flag as cluster-retrieved.
-          return { ...mem, score: cluster.score ?? null, via_cluster: true };
-        })
-        .filter(Boolean)
-        .slice(0, profile.topK);
+        const allMemories = await memoriesAPI.getByChat(activeChatIdRef.current);
+        const byId        = Object.fromEntries(allMemories.map(m => [m.id, m]));
+        retrievedMems     = clusterHits
+          .map(cluster => {
+            const members = cluster.members
+              .map(id => byId[id])
+              .filter(Boolean)
+              .sort((a, b) => (b.retrieval_count ?? 0) - (a.retrieval_count ?? 0));
+            const mem = members[0];
+            return mem ? { ...mem, score: cluster.score ?? null, via_cluster: true } : null;
+          })
+          .filter(Boolean)
+          .slice(0, profile.topK);
       } else {
-        // Fall back to direct retrieval if no clusters exist yet
         retrievedMems = await memoriesAPI.query(
-          activeChatId, queryVec,
+          activeChatIdRef.current, queryVec,
           profile.topK, profile.threshold,
           profile.alpha, profile.decayRate
         );
@@ -700,36 +726,20 @@ export default function App() {
       ? await lorebookAPI.query(queryVec, profile.topK, profile.lorebookThreshold ?? profile.threshold)
       : [];
 
-    // Merge pinned + retrieved, deduplicate by ID
     const pinnedMemIds  = new Set(pinnedMems.map(m => m.id));
     const pinnedLoreIds = new Set(pinnedLore.map(l => l.id));
 
-    const relMems = [
-      ...pinnedMems,
-      ...retrievedMems.filter(m => !pinnedMemIds.has(m.id)),
-    ];
-    const relLore = [
-      ...pinnedLore,
-      ...retrievedLore.filter(l => !pinnedLoreIds.has(l.id)),
-    ];
+    const relMems = [...pinnedMems, ...retrievedMems.filter(m => !pinnedMemIds.has(m.id))];
+    const relLore = [...pinnedLore, ...retrievedLore.filter(l => !pinnedLoreIds.has(l.id))];
 
-    // After merging pinned + retrieved:
-    const now = new Date().toISOString();
-    if (!isRegenerated) {
-      retrievedMems.forEach(m => {
-        memoriesAPI.markRetrieved(m.id, now).catch(console.error);
-      });
-    }
-
-    let injected = resolvedSystemPrompt;
+    let injected = resolved;
     if (relMems.length > 0)
       injected += `\n\n[RECALLED MEMORIES — use naturally, do not cite directly]\n${relMems.map(m => `• ${m.summary}`).join("\n")}`;
     if (relLore.length > 0)
       injected += `\n\n[LOREBOOK — world/character context]\n${relLore.map(l => `[${(l.type ?? "ENTRY").toUpperCase()}] ${l.title}: ${l.content}`).join("\n")}`;
     if (activeInferences.length > 0)
-      injected += `\n\n[ACTIVE STATES — maintain these consequences throughout]\n${activeInferences.map(inf => `• ${inf.state} (confidence: ${inf.confidence.toFixed(2)})`).join("\n")}`;
-    if (relMems.length + relLore.length > 0)
-      addLog(`Injected ${relMems.length} mem (${pinnedMems.length} pinned) + ${relLore.length} lore (${pinnedLore.length} pinned)`);
+      injected += `\n\n[ACTIVE STATES — maintain these consequences]\n${activeInferences.map(inf => `• ${inf.state} (confidence: ${inf.confidence.toFixed(2)})`).join("\n")}`;
+
     if (activeChar) {
       const charContext = [
         activeChar.appearance     && `Appearance: ${activeChar.appearance}`,
@@ -737,6 +747,7 @@ export default function App() {
         activeChar.speech_pattern && `Speech pattern: ${activeChar.speech_pattern}`,
         activeChar.background     && `Background: ${activeChar.background}`,
       ].filter(Boolean).join("\n");
+
       const refForms = [
         activeChar.narrative_alias  && `Refer to this character in narration as "${activeChar.narrative_alias}".`,
         activeChar.address_formal   && `Characters who know them formally address them as "${activeChar.address_formal}".`,
@@ -747,12 +758,39 @@ export default function App() {
         injected += `\n\n[ACTIVE CHARACTER — embody this persona]\n${refForms ? refForms + "\n" : ""}${charContext}`;
       }
 
-      // Walk character's edges for referenced entities
       if (queryVec) {
-        const graphContext = await buildGraphContext(activeChar.id, queryContent);
+        const graphContext = await buildGraphContext(activeChar.id, content);
         if (graphContext) injected += `\n\n[CHARACTER RELATIONSHIPS]\n${graphContext}`;
       }
     }
+
+    return { injected, relMems, relLore, activeInferences };
+  }
+  
+  async function sendMessageWith(history, parentId, isRegenerated=false, overrideCharId=null) {
+    const cfg = configRef.current;
+    const last     = history[history.length - 1];
+    const window = cfg.contextWindow ?? 0;
+    const windowedHistory = window > 0
+      ? history.slice(-window * 2)  // *2 because each turn is user+assistant
+      : history;
+    const isGroupChat = groupChatMembers.length > 0;
+
+    const queryContent = last.implicit
+      ? history.filter(m => !m.implicit).slice(-3).map(m => m.content).join(" ")
+      : last.content;
+
+    const queryVec = await embed(queryContent);
+    
+    const { injected, relMems, relLore, activeInferences } = await buildInjectedContext(
+      queryVec, queryContent, overrideCharId
+    );
+    // After character context injection, for non-creative presets:
+    if (!["creative", "roleplay"].includes(cfg.style ?? "none") && entities.length > 0) {
+      const graphContext = await buildResearchContext(queryContent);
+      if (graphContext) injected += `\n\n[KNOWLEDGE GRAPH]\n${graphContext}`;
+    }
+
     // Placeholder node
     const placeholderId = `msg_${Date.now()}`;
     const placeholder   = {
@@ -761,7 +799,7 @@ export default function App() {
       finishReason: "stop", reasoning: null, injectedInferenceData: activeInferences,
       injectedMems: relMems.length, injectedLore: relLore.length,
       injectedMemData: relMems, injectedLoreData: relLore,
-      implicit: false, timestamp: new Date().toISOString(), regenerated: false,
+      implicit: false, timestamp: new Date().toISOString(),
     };
 
     addNode(placeholder);
@@ -813,23 +851,6 @@ export default function App() {
       if(turnsSinceChunk.current===0)
         turnsSinceChunk.current=2; // to allow for updated memories with the regenerated message instead of from a stale one
     }
-
-    // Group chat routing — only in roleplay mode with members set
-    if (!isRegenerated && groupChatMembers.length > 0 && autoTurnCountRef.current < 3) {
-      const evaluation = await runGroupEvaluator(reply ?? "", history);
-      if (evaluation) {
-        if (evaluation.reason === "direct_address") {
-          autoTurnCountRef.current += 1;
-          // Queue rather than recurse — let React commit current state first
-          setTimeout(() => {
-            invokeGroupTurn(evaluation.charId);
-          }, 50);
-        } else {
-          setPendingGroupTurn(evaluation);
-        }
-      }
-    }
-
     // Title generation
     if (activeChat?.title === "New Chat" && history.length >= 2) {
       try {
@@ -884,7 +905,47 @@ export default function App() {
 
     try {
       const history = [...messages, userMsg];
+      if (isGroupChat) {
+      // Group chat — enqueue via event queue
+      setLoading(true);
+      const queryVec = await embed(content);
+
+      // Frontend still assembles context — same as before
+      // but now we enqueue rather than call sendMessageWith
+      await enqueueEvent({
+        kind:       "task",
+        task_type:  "Evaluate",
+        chat_id:    activeChatId,
+        priority:   1.0,
+        payload: {
+          content,
+          preset_id:    activePreset,
+          // Pass group member ids so backend can load chars
+          members:      groupChatMembers,
+        },
+      });
+
+      // Also enqueue the user's message as a Generate for the current active char
+      // (or skip if no active char — pure group with no designated responder)
+      if (activeCharId) {
+        const injected = await buildInjectedContext(queryVec, content);
+        await enqueueEvent({
+          kind:       "task",
+          task_type:  "Generate",
+          chat_id:    activeChatId,
+          priority:   1.0,
+          payload: {
+            char_id:       activeCharId,
+            messages:      [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
+            system_prompt: injected,
+            reason:        "user_sent",
+          },
+        });
+      }
+    } else {
+      // Standard chat — existing sendMessageWith flow unchanged
       await sendMessageWith(history, userMsg.id);
+    }
     } catch(e) {
       const errMsg = {
         id: `msg_${Date.now()}`, parentId: userMsg.id,

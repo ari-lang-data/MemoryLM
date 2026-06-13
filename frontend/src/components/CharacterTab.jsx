@@ -45,7 +45,7 @@ async function resizeImage(dataUrl, maxSize = 128) {
 const EMPTY_DRAFT = {
   name: "", type: "character", description: "",
   appearance: "", behaviour: "", speech_pattern: "", background: "",
-  narrative_alias: "", address_formal: "", address_informal: "",
+  narrative_alias: "", address_formal: "", address_informal: "", bias: 0.5,
   metadata: {},
 };
 
@@ -94,6 +94,7 @@ export default function CharacterTab({
       narrative_alias:  char.narrative_alias ?? "",
       address_formal:   char.address_formal ?? "",
       address_informal: char.address_informal ?? "",
+      bias:             char.bias ?? 0.5,
       metadata:         typeof char.metadata === "string" ? JSON.parse(char.metadata) : (char.metadata ?? {}),
     });
     setEditingId(char.id);
@@ -154,6 +155,7 @@ export default function CharacterTab({
         narrative_alias:  draft.narrative_alias  || null,
         address_formal:   draft.address_formal   || null,
         address_informal: draft.address_informal || null,
+        bias:             draft.bias ?? 0.5,
       });
 
       // Refresh characters list
@@ -418,6 +420,25 @@ export default function CharacterTab({
             </div>
           ))}
 
+          <div>
+            <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--color-text-secondary)" }}>
+              Conversational initiative
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <input
+                type="range" min={0} max={1} step={0.05}
+                value={draft.bias ?? 0.5}
+                onChange={e => setDraft(d => ({ ...d, bias: parseFloat(e.target.value) }))}
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: 12, fontWeight: 500, minWidth: 28, textAlign: "right" }}>
+                {(draft.bias ?? 0.5).toFixed(2)}
+              </span>
+            </div>
+            <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+              How readily this character speaks unprompted in group chats.
+            </p>
+          </div>
 
           <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             <button onClick={saveCharacter} disabled={!draft.name.trim() || saving} style={{ ...inputStyle, flex: 1, cursor: "pointer", textAlign: "center", opacity: (!draft.name.trim() || saving) ? 0.4 : 1 }}>
