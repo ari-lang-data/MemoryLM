@@ -14,6 +14,7 @@ class Chat(SQLModel, table=True):
     chat_type:           str = Field(default="standard")
     character_bindings:  str = Field(default="{}")  # JSON
     activation_state: str = Field(default="{}")
+    active_children: str = Field(default="{}")
     created_at: str
     updated_at: str
 
@@ -59,6 +60,27 @@ class Fact(SQLModel, table=True):
     source_episode_ids:  str    = Field(default="[]")    # JSON array of memory IDs
     created_at:          str
 
+from sqlmodel import UniqueConstraint
+
+class MessageNode(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("chat_id", "id", name="uq_messagenode_chat_msg"),)
+    row_id:        Optional[int] = Field(default=None, primary_key=True)
+    id:            str           = Field(index=True)
+    chat_id:       str           = Field(index=True)
+    parent_id:     Optional[str] = Field(default=None, index=True)
+    role:          str
+    content:       str
+    implicit:      bool          = False
+    finish_reason: str           = "stop"
+    reasoning:     Optional[str] = None
+    timestamp:     str           = ""
+    regenerated:   bool          = False
+    char_id:       Optional[str] = None
+    char_name:     Optional[str] = None
+    injected_mems: int           = 0
+    injected_lore: int           = 0
+    injected_refs: str           = "{}"
+
 # ─── Engine ───────────────────────────────────────────────────────────────────
 
 load_dotenv()
@@ -72,6 +94,7 @@ def init_db():
             ("chat_type",          "VARCHAR DEFAULT 'standard'"),
             ("character_bindings", "VARCHAR DEFAULT '{}'"),
             ("activation_state", "VARCHAR DEFAULT '{}'"),
+            ("active_children", "VARCHAR DEFAULT '{}'"),
         ]:
             try:
                 conn.execute(text(f"ALTER TABLE chat ADD COLUMN {col} {definition}"))
@@ -310,4 +333,130 @@ def _fact_to_dict(f: Fact) -> dict:
         "confidence":         f.confidence,
         "source_episode_ids": json.loads(f.source_episode_ids),
         "created_at":         f.created_at,
+    }
+
+# ─── Message helpers ───────────────────────────────────────────────────────
+ 
+def _get_node(session: Session, chat_id: str, node_id: str) -> Optional[MessageNode]:
+    return session.exec(
+        select(MessageNode).where(MessageNode.chat_id == chat_id, MessageNode.id == node_id)
+    ).first()
+
+def add_message_node(session: Session, node: dict) -> MessageNode:
+    m = MessageNode(
+        id=            node["id"],
+        chat_id=       node["chat_id"],
+        parent_id=     node.get("parentId"),
+        role=          node["role"],
+        content=       node.get("content", ""),
+        implicit=      node.get("implicit", False),
+        finish_reason= node.get("finishReason", "stop"),
+        reasoning=     node.get("reasoning"),
+        timestamp=     node.get("timestamp", ""),
+        regenerated=   node.get("regenerated", False),
+        char_id=       node.get("char_id"),
+        char_name=     node.get("char_name"),
+        injected_mems= node.get("injectedMems", 0),
+        injected_lore= node.get("injectedLore", 0),
+        injected_refs= json.dumps(node.get("injectedRefs", {})),
+    )
+    session.add(m)
+    session.commit()
+    session.refresh(m)
+    return m
+ 
+def update_message_node(session: Session, chat_id: str, node_id: str, updates: dict) -> Optional[MessageNode]:
+    m = _get_node(session, chat_id, node_id)
+    if not m:
+        return None
+    if "content"      in updates: m.content       = updates["content"]
+    if "finishReason" in updates: m.finish_reason  = updates["finishReason"]
+    if "reasoning"    in updates: m.reasoning      = updates["reasoning"]
+    if "injectedMems" in updates: m.injected_mems  = updates["injectedMems"]
+    if "injectedLore" in updates: m.injected_lore  = updates["injectedLore"]
+    if "injectedRefs" in updates: m.injected_refs  = json.dumps(updates["injectedRefs"])
+    session.add(m)
+    session.commit()
+    session.refresh(m)
+    return m
+ 
+def delete_message_node(session: Session, chat_id: str, node_id: str) -> bool:
+    m = _get_node(session, chat_id, node_id)
+    if not m:
+        return False
+    session.delete(m)
+    session.commit()
+    return True
+ 
+def get_chat_message_nodes(session: Session, chat_id: str) -> list[dict]:
+    rows = session.exec(select(MessageNode).where(MessageNode.chat_id == chat_id)).all()
+    return [_node_to_dict(m) for m in rows]
+ 
+def clear_chat_messages(session: Session, chat_id: str) -> bool:
+    rows = session.exec(select(MessageNode).where(MessageNode.chat_id == chat_id)).all()
+    for m in rows:
+        session.delete(m)
+    session.commit()
+    return True
+ 
+def replace_chat_messages(session: Session, chat_id: str, nodes: list[dict], active_children: dict):
+    """Bulk replace — used by fork and by the JSON migration. Transactional."""
+    existing = session.exec(select(MessageNode).where(MessageNode.chat_id == chat_id)).all()
+    for m in existing:
+        session.delete(m)
+    for node in nodes:
+        node = {**node, "chat_id": chat_id}
+        m = MessageNode(
+            id=            node["id"],
+            chat_id=       chat_id,
+            parent_id=     node.get("parentId"),
+            role=          node["role"],
+            content=       node.get("content", ""),
+            implicit=      node.get("implicit", False),
+            finish_reason= node.get("finishReason", "stop"),
+            reasoning=     node.get("reasoning"),
+            timestamp=     node.get("timestamp", ""),
+            regenerated=   node.get("regenerated", False),
+            char_id=       node.get("char_id"),
+            char_name=     node.get("char_name"),
+            injected_mems= node.get("injectedMems", 0),
+            injected_lore= node.get("injectedLore", 0),
+            injected_refs= json.dumps(node.get("injectedRefs", {})),
+        )
+        session.add(m)
+    set_active_children(session, chat_id, active_children, commit=False)
+    session.commit()
+ 
+def set_active_children(session: Session, chat_id: str, active_children: dict, commit: bool = True) -> bool:
+    chat = session.get(Chat, chat_id)
+    if not chat:
+        return False
+    chat.active_children = json.dumps(active_children)
+    session.add(chat)
+    if commit:
+        session.commit()
+    return True
+ 
+def get_active_children(session: Session, chat_id: str) -> dict:
+    chat = session.get(Chat, chat_id)
+    if not chat:
+        return {}
+    return json.loads(chat.active_children or "{}")
+ 
+def _node_to_dict(m: MessageNode) -> dict:
+    return {
+        "id":               m.id,
+        "parentId":         m.parent_id,
+        "role":             m.role,
+        "content":          m.content,
+        "implicit":         m.implicit,
+        "finishReason":     m.finish_reason,
+        "reasoning":        m.reasoning,
+        "timestamp":        m.timestamp,
+        "regenerated":      m.regenerated,
+        "char_id":          m.char_id,
+        "char_name":        m.char_name,
+        "injectedMems":     m.injected_mems,
+        "injectedLore":     m.injected_lore,
+        "injectedRefs":     json.loads(m.injected_refs or "{}"),
     }

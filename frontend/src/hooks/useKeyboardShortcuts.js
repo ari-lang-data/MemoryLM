@@ -14,7 +14,7 @@ export function useKeyboardShortcuts({
   onOpenShortcuts,
   onRegenerate,
   onFastForward,
-  loading,
+  loading, powerUser, onOpenCommandPalette
 }) {
   useEffect(() => {
     function handler(e) {
@@ -36,6 +36,7 @@ export function useKeyboardShortcuts({
       // ── General ─────────────────────────────────────────────────────────
       if (ctrl && key === ",")  { e.preventDefault(); onOpenSettings();  return; }
       if (key === "F1")         { e.preventDefault(); onOpenShortcuts(); return; }
+      if (ctrl && key === "p" && powerUser) { e.preventDefault(); onOpenCommandPalette?.(); return; }
 
       // ── Chat ────────────────────────────────────────────────────────────
       if (ctrl && shift && key === "Enter" && activePanel === "chat") {

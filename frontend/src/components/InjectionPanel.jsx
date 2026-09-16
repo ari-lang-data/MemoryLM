@@ -1,4 +1,6 @@
+import { useState, useRef, useEffect } from "react";
 import { frostedGlassValues } from "../lib/fermiDirac";
+import { memoriesAPI, lorebookAPI, episodicAPI } from "../lib/api";
 
 const TYPE_COLORS = {
   character: "#7F77DD", location: "#1D9E75", faction: "#D85A30",
@@ -7,6 +9,95 @@ const TYPE_COLORS = {
 };
 
 const { bgAlpha, blurPx, saturate } = frostedGlassValues();
+
+// Module-level cache — survives across hovers within the session
+const _cache = new Map(); // key: `${kind}:${id}` -> resolved object | "missing"
+
+function useResolved(kind, ref) {
+  const [resolved, setResolved] = useState(() => _cache.get(`${kind}:${ref.id}`) ?? null);
+
+  useEffect(() => {
+    const cacheKey = `${kind}:${ref.id}`;
+    const cached   = _cache.get(cacheKey);
+    if (cached) { setResolved(cached); return; }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        let data;
+        if (kind === "mem")  data = await memoriesAPI.getById(ref.id);
+        if (kind === "lore") data = await lorebookAPI.getById(ref.id);
+        if (kind === "inf")  data = await episodicAPI.getInference(ref.id);
+        if (!cancelled) { _cache.set(cacheKey, data); setResolved(data); }
+      } catch {
+        if (!cancelled) { _cache.set(cacheKey, "missing"); setResolved("missing"); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [kind, ref.id]);
+
+  return resolved;
+}
+
+function MemoryCard({ ref: memRef }) {
+  const resolved = useResolved("mem", memRef);
+  return (
+    <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "var(--border-radius-md)", padding: "8px 10px", border: "0.5px solid rgba(255,255,255,0.07)" }}>
+      <p style={{ margin: "0 0 4px", fontSize: 12, lineHeight: 1.55, color: "var(--color-text-primary)" }}>
+        {resolved === null && "Loading…"}
+        {resolved === "missing" && <span style={{ color: "var(--color-text-tertiary)", fontStyle: "italic" }}>No longer available</span>}
+        {resolved && resolved !== "missing" && (
+          <>{resolved.summary?.slice(0, 400)}{resolved.summary?.length > 400 ? "…" : ""}</>
+        )}
+      </p>
+      <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+        {memRef.pinned ? "pinned" : memRef.score != null ? `score ${memRef.score.toFixed(3)}` : "cluster match"}
+      </span>
+    </div>
+  );
+}
+
+function LoreCard({ ref: loreRef }) {
+  const resolved = useResolved("lore", loreRef);
+  return (
+    <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "var(--border-radius-md)", padding: "8px 10px", border: "0.5px solid rgba(255,255,255,0.07)" }}>
+      {resolved === null && <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-tertiary)" }}>Loading…</p>}
+      {resolved === "missing" && <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>No longer available</p>}
+      {resolved && resolved !== "missing" && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <span style={{ fontSize: 11, padding: "1px 7px", borderRadius: "var(--border-radius-md)", background: (TYPE_COLORS[resolved.type] ?? TYPE_COLORS.other) + "22", color: TYPE_COLORS[resolved.type] ?? TYPE_COLORS.other, border: `0.5px solid ${(TYPE_COLORS[resolved.type] ?? TYPE_COLORS.other)}66`, fontWeight: 500 }}>{resolved.type}</span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{resolved.title}</span>
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+            {resolved.content?.slice(0, 120)}{resolved.content?.length > 120 ? "…" : ""}
+          </p>
+        </>
+      )}
+      <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+        {loreRef.pinned ? "pinned" : loreRef.score != null ? `score ${loreRef.score.toFixed(3)}` : ""}
+      </span>
+    </div>
+  );
+}
+
+function InferenceCard({ ref: infRef }) {
+  const resolved = useResolved("inf", infRef);
+  return (
+    <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "var(--border-radius-md)", padding: "8px 10px", border: "0.5px solid rgba(255,255,255,0.07)" }}>
+      <p style={{ margin: "0 0 4px", fontSize: 12, lineHeight: 1.55, color: "var(--color-text-primary)" }}>
+        {resolved === null && "Loading…"}
+        {resolved === "missing" && <span style={{ color: "var(--color-text-tertiary)", fontStyle: "italic" }}>No longer available</span>}
+        {resolved && resolved !== "missing" && (
+          <>{resolved.state?.slice(0, 400)}{resolved.state?.length > 400 ? "…" : ""}</>
+        )}
+      </p>
+      <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+        confidence {infRef.confidence?.toFixed(3)}
+      </span>
+    </div>
+  );
+}
 
 export default function InjectionPanel({
   memData = [],
@@ -26,7 +117,7 @@ export default function InjectionPanel({
         right:                0,
         bottom:               0,
         width:                300,
-        background:           "`rgba(var(--glass-rgb), ${bgAlpha})`",
+        background:           `rgba(var(--glass-rgb), ${bgAlpha})`,
         backdropFilter:       `blur(${blurPx}px) saturate(${saturate})`,
         WebkitBackdropFilter: `blur(${blurPx}px) saturate(${saturate})`,
         borderLeft:           "0.5px solid rgba(255,255,255,0.07)",
@@ -43,52 +134,24 @@ export default function InjectionPanel({
         <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-secondary)" }}>Injected context</span>
       </div>
 
-      {/* ── Memories ── */}
       {memData.length > 0 && (
         <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
           <p style={{ margin: 0, fontSize: 11, color: "var(--color-text-tertiary)", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Memories</p>
-          {memData.map((m, i) => (
-            <div key={i} style={{ background: "rgba(255,255,255,0.04)", borderRadius: "var(--border-radius-md)", padding: "8px 10px", border: "0.5px solid rgba(255,255,255,0.07)" }}>
-              <p style={{ margin: "0 0 4px", fontSize: 12, lineHeight: 1.55, color: "var(--color-text-primary)" }}>{m.summary?.slice(0, 400)}{m.summary?.length > 400 ? "…" : ""}</p>
-              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                {m.pinned ? "pinned" : m.via_cluster && m.score == null ? "cluster match": `score ${m.score?.toFixed(3)}`}
-              </span>
-            </div>
-          ))}
+          {memData.map((m, i) => <MemoryCard key={m.id ?? i} ref={m} />)}
         </div>
       )}
 
-      {/* ── Lorebook ── */}
       {loreData.length > 0 && (
         <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
           <p style={{ margin: 0, fontSize: 11, color: "var(--color-text-tertiary)", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Lorebook</p>
-          {loreData.map((l, i) => (
-            <div key={i} style={{ background: "rgba(255,255,255,0.04)", borderRadius: "var(--border-radius-md)", padding: "8px 10px", border: "0.5px solid rgba(255,255,255,0.07)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span style={{ fontSize: 11, padding: "1px 7px", borderRadius: "var(--border-radius-md)", background: (TYPE_COLORS[l.type] ?? TYPE_COLORS.other) + "22", color: TYPE_COLORS[l.type] ?? TYPE_COLORS.other, border: `0.5px solid ${(TYPE_COLORS[l.type] ?? TYPE_COLORS.other)}66`, fontWeight: 500 }}>{l.type}</span>
-                <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{l.title}</span>
-              </div>
-              <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{l.content?.slice(0, 120)}{l.content?.length > 120 ? "…" : ""}</p>
-              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                {l.pinned ? "pinned" : `score ${l.score?.toFixed(3)}`}
-              </span>
-            </div>
-          ))}
+          {loreData.map((l, i) => <LoreCard key={l.id ?? i} ref={l} />)}
         </div>
       )}
 
-      {/* ── Active inferences ── */}
       {inferenceData.length > 0 && (
         <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
           <p style={{ margin: 0, fontSize: 11, color: "var(--color-text-tertiary)", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Active states</p>
-          {inferenceData.map((inf, i) => (
-            <div key={i} style={{ background: "rgba(255,255,255,0.04)", borderRadius: "var(--border-radius-md)", padding: "8px 10px", border: "0.5px solid rgba(255,255,255,0.07)" }}>
-              <p style={{ margin: "0 0 4px", fontSize: 12, lineHeight: 1.55, color: "var(--color-text-primary)" }}>{inf.state?.slice(0, 400)}{inf.state?.length > 400 ? "…" : ""}</p>
-              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                confidence {inf.confidence?.toFixed(3)}
-              </span>
-            </div>
-          ))}
+          {inferenceData.map((inf, i) => <InferenceCard key={inf.id ?? i} ref={inf} />)}
         </div>
       )}
 

@@ -24,6 +24,7 @@ export const chatsAPI = {
 
 // ─── Memories ─────────────────────────────────────────────────────────────────
 export const memoriesAPI = {
+  getById:       (id)                                                          => request("GET", `/memories/${id}`),
   add:           (memory)                                                      => request("POST",   "/memories/",                  memory),
   query:         (chat_id, embedding, n_results, threshold, alpha, decay_rate) => request("POST",   "/memories/query",             { chat_id, embedding, n_results, threshold, alpha, decay_rate }),
   update:        (id, summary, embedding, timestamp)                           => request("PUT",    `/memories/${id}`,             { summary, embedding, timestamp }),
@@ -38,6 +39,7 @@ export const memoriesAPI = {
 
 // ─── Lorebook ─────────────────────────────────────────────────────────────────
 export const lorebookAPI = {
+  getById:   (id)                              => request("GET", `/lorebook/${id}`),
   getAll:    ()                                => request("GET",    "/lorebook/"),
   add:       (entry)                           => request("POST",   "/lorebook/",          entry),
   query:     (embedding, n_results, threshold) => request("POST",   "/lorebook/query",     { embedding, n_results, threshold }),
@@ -56,7 +58,15 @@ export const presetsAPI = {
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 export const messagesAPI = {
-  get:   (chat_id)                        => request("GET",    `/messages/${chat_id}`),
+  get:   (chat_id) => request("GET", `/messages/${chat_id}`),
+ 
+  // Granular — normal send/edit/delete flow uses these, never full save
+  appendNode:   (chat_id, node)              => request("POST",   `/messages/${chat_id}/node`, node),
+  updateNode:   (chat_id, node_id, updates)  => request("PATCH",  `/messages/${chat_id}/node/${node_id}`, updates),
+  deleteNode:   (chat_id, node_id)           => request("DELETE", `/messages/${chat_id}/node/${node_id}`),
+  setActiveChildren: (chat_id, activeChildren) => request("PATCH", `/messages/${chat_id}/active-children`, { activeChildren }),
+ 
+  // Bulk — only for fork and full resync, NOT per-message saves
   save:  (chat_id, nodes, activeChildren) => request("POST",   `/messages/${chat_id}`, { nodes, activeChildren }),
   clear: (chat_id)                        => request("DELETE", `/messages/${chat_id}`),
 };
@@ -121,6 +131,7 @@ export const episodicAPI = {
 // ─── Events ─────────────────────────────────────────────────────────────────
 export const eventsAPI = {
   enqueue: (body) => request("POST", "/events/enqueue", body),
+  setDirectorConfig: (url, model) => request("POST", "/events/director-config", { url, model }),
   // SSE connection is handled directly via EventSource, not fetch
   connect: (chat_id, since, handlers) => {
     const url = `${BASE_URL}/events/stream/${chat_id}${since ? `?since=${since}` : ""}`;

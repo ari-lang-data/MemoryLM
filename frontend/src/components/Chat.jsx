@@ -41,7 +41,11 @@ export default function Chat({chats,
         forkChat,
         branchMode,
         getSiblings,onExtractEntities,
-        extracting, confirm, characters, pendingGroupTurn, onInvokeGroupTurn, onSkipGroupTurn
+        extracting, confirm, characters,
+        groupChatMembers,
+        isGroupChat,
+        pendingNarrativeTurn, onInvokeNarrativeTurn, 
+        onSkipNarrativeTurn,
         }){
 
           const lastMsg         = messages[messages.length - 1];
@@ -116,6 +120,27 @@ export default function Chat({chats,
                           >›</button>
                         </div>
                       )}
+
+                      {/* Group chat character nameplate */}
+                      {isGroupChat && m.role === "assistant" && m.char_id && (() => {
+                        const char = groupChatMembers
+                          ? characters?.find(c => c.id === m.char_id)
+                          : null;
+                        if (!char) return null;
+                        const meta = typeof char.metadata === "string"
+                          ? JSON.parse(char.metadata) : (char.metadata ?? {});
+                        return (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, alignSelf: "flex-start" }}>
+                            <div style={{ width: 20, height: 20, borderRadius: "50%", overflow: "hidden", background: "var(--color-background-secondary)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              {meta.avatar
+                                ? <img src={meta.avatar} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                : <span style={{ fontSize: 9, color: "var(--color-text-tertiary)", fontWeight: 600 }}>{char.name?.charAt(0)?.toUpperCase()}</span>
+                              }
+                            </div>
+                            <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontWeight: 500 }}>{char.name}</span>
+                          </div>
+                        );
+                      })()}
 
                       {/* Reasoning block */}
                       {m.reasoning && (
@@ -216,19 +241,46 @@ export default function Chat({chats,
             </div>
 
             <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", display: "flex", justifyContent: "center", borderTopLeftRadius: "var(--border-radius-lg)", borderTopRightRadius: "var(--border-radius-lg)", borderBottomLeftRadius: (config.style ==="roleplay" ? "var(--border-radius-lg)" : 0), borderBottomRightRadius: (config.style ==="roleplay" ? "var(--border-radius-lg)" : 0), alignSelf: "center",width: "100%", maxWidth: 800}}>
-              {pendingGroupTurn && (() => {
-                const char = characters?.find(c => c.id === pendingGroupTurn.charId);
-                return (
-                  <div style={{ padding: "8px 16px", background: "var(--color-background-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                      <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>{char?.name ?? "A character"}</span> might want to respond
-                    </span>
-                    <button onClick={onInvokeGroupTurn} style={{ fontSize: 12, padding: "3px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-primary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer" }}>Invoke</button>
-                    <button onClick={onSkipGroupTurn}   style={{ fontSize: 12, padding: "3px 10px", borderRadius: "var(--border-radius-md)", border: "none", background: "transparent", color: "var(--color-text-tertiary)", cursor: "pointer" }}>Skip</button>
-                  </div>
-                );
-              })()}
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", width: "100%", maxWidth: 680 }}>
+                {pendingNarrativeTurn && (() => {
+                  const char = characters?.find(c => c.id === pendingNarrativeTurn.charId);
+                  return (
+                    <div style={{
+                      width: "100%", maxWidth: 680,
+                      marginBottom: 8,
+                      padding: "8px 12px",
+                      background: "var(--color-background-secondary)",
+                      borderRadius: "var(--border-radius-md)",
+                      border: "0.5px solid var(--color-border-tertiary)",
+                      display: "flex", alignItems: "center", gap: 10,
+                    }}>
+                      {(() => {
+                        const meta = typeof char?.metadata === "string"
+                          ? JSON.parse(char.metadata) : (char?.metadata ?? {});
+                        return meta?.avatar
+                          ? <img src={meta.avatar} style={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+                          : null;
+                      })()}
+                      <span style={{ flex: 1, fontSize: 12, color: "var(--color-text-secondary)" }}>
+                        <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>
+                          {char?.name ?? "A character"}
+                        </span>{" "}might want to respond
+                      </span>
+                      <button
+                        onClick={onInvokeNarrativeTurn}
+                        style={{ fontSize: 12, padding: "3px 10px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-primary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer", flexShrink: 0 }}
+                      >
+                        Invoke
+                      </button>
+                      <button
+                        onClick={onSkipNarrativeTurn}
+                        style={{ fontSize: 12, padding: "3px 10px", borderRadius: "var(--border-radius-md)", border: "none", background: "transparent", color: "var(--color-text-tertiary)", cursor: "pointer", flexShrink: 0 }}
+                      >
+                        Skip
+                      </button>
+                    </div>
+                  );
+                })()}
                 <textarea
                   value={input}
                   onChange={e => setInput(e.target.value)}

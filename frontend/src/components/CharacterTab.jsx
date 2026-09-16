@@ -259,8 +259,8 @@ export default function CharacterTab({
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  return (
-    <div style={{ flex: 1, display: "flex", overflow: "hidden", width: "100%", maxWidth: 800 }}>
+  return (<div style={{flex: 1, overflowY: "auto", width: "100%"}}>
+    <div style={{ flex: 1, display: "flex", overflow: "hidden", width: "100%", margin: "0 auto", maxWidth: 800 }}>
 
       {/* ── CHARACTER LIST ── */}
       {view === "list" && (
@@ -515,6 +515,6 @@ export default function CharacterTab({
           }
         </div>
       )}
-    </div>
+    </div></div>
   );
 }

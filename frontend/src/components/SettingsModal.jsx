@@ -8,13 +8,6 @@ import { ChevronRight } from "lucide-react";
 
 const FIXED_PRESET_IDS = ["assistant", "coding", "creative", "roleplay"];
 
-const SETTINGS_TABS = [
-  { id: "connection", label: "Connection" },
-  { id: "memory",     label: "Memory" },
-  { id: "generation", label: "Generation" },
-  { id: "data",       label: "Data" },
-];
-
 // Parameters always visible in presets
 const BASIC_PARAM_KEYS = new Set(["chunkEvery", "contextWindow"]);
 
@@ -204,9 +197,23 @@ export default function SettingsModal({
   theme,
   setTheme,
   themes,
+  // User props
+  powerUser, setPowerUser,
+  // group chat handling props
+  directorUrl, directorModel, setDirectorUrl, setDirectorModel
 }) {
   const [activeTab,    setActiveTab]    = useState("presets");
   const [settingsTab,  setSettingsTab]  = useState("connection");
+  const [powerUserPending, setPowerUserPending] = useState(false);
+
+  const SETTINGS_TABS = [
+    { id: "connection", label: "Connection" },
+    { id: "memory",     label: "Memory"     },
+    { id: "generation", label: "Generation" },
+    ...(config?.style === "roleplay" ? [{ id: "groupchat", label: "Group Chat" }] : []),
+    { id: "data",       label: "Data"       },
+  ];
+
   const modalRef = useRef(null);
 
   // Close on Escape
@@ -366,6 +373,75 @@ export default function SettingsModal({
                       ))}
                     </div>
                   </Card>
+                  <Card>
+                    <CardTitle>Mode</CardTitle>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                      <div>
+                        <p style={{ margin: "0 0 2px", fontSize: 13, color: "var(--color-text-primary)" }}>
+                          {powerUser ? "Power User" : "Standard"}
+                        </p>
+                        <p style={{ margin: 0, fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                          {powerUser
+                            ? "Advanced configuration options are enabled."
+                            : "Simplified interface with sensible defaults."}
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (!powerUser) {
+                            // Switching to power user — show neutral confirmation
+                            setPowerUserPending(true);
+                          } else {
+                            setPowerUser(false);
+                          }
+                        }}
+                        style={{
+                          ...inputStyle,
+                          cursor:  "pointer",
+                          fontSize: 12,
+                          padding: "5px 14px",
+                          flexShrink: 0,
+                          borderColor: powerUser ? "var(--color-border-primary)" : undefined,
+                          color:       powerUser ? "var(--color-text-primary)"   : "var(--color-text-secondary)",
+                        }}
+                      >
+                        {powerUser ? "Switch to Standard" : "Enable Power User"}
+                      </button>
+                    </div>
+
+                    {/* Inline confirmation — not a modal, not danger-styled */}
+                    {powerUserPending && (
+                      <div style={{
+                        marginTop:    12,
+                        padding:      "10px 12px",
+                        borderRadius: "var(--border-radius-md)",
+                        border:       "0.5px solid var(--color-border-secondary)",
+                        background:   "var(--color-background-secondary)",
+                        display:      "flex",
+                        alignItems:   "center",
+                        justifyContent: "space-between",
+                        gap:          12,
+                      }}>
+                        <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                          Power user mode exposes advanced configuration options that can potentially break things. Switch anyway?
+                        </p>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <button
+                            onClick={() => { setPowerUser(true); setPowerUserPending(false); }}
+                            style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "4px 12px" }}
+                          >
+                            Switch anyway
+                          </button>
+                          <button
+                            onClick={() => setPowerUserPending(false)}
+                            style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 12, padding: "4px 8px" }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </Card>
                 </>
               )}
 
@@ -426,6 +502,34 @@ export default function SettingsModal({
                         <span style={{ fontSize: 13, fontWeight: 500, minWidth: 36, textAlign: "right" }}>{(config[key] ?? min).toFixed(2)}</span>
                       </Row>
                     ))}
+                  </div>
+                </Card>
+              )}
+
+              {/* ── GROUP CHAT ── */}
+              {settingsTab === "groupchat" && (
+                <Card>
+                  <CardTitle>Director model</CardTitle>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <Row label="Server URL">
+                      <input
+                        value={directorUrl}
+                        onChange={e => { setDirectorUrl(e.target.value); persistConfig(config, systemPrompt, lmStudioUrl); }}
+                        placeholder="http://localhost:1234"
+                        style={{ ...inputStyle, flex: 1 }}
+                      />
+                    </Row>
+                    <Row label={<>Model name <span style={{ fontSize: 11, opacity: 0.6 }}>(optional)</span></>}>
+                      <input
+                        value={directorModel}
+                        onChange={e => setDirectorModel(e.target.value)}
+                        placeholder="Leave blank to use loaded model"
+                        style={{ ...inputStyle, flex: 1 }}
+                      />
+                    </Row>
+                    <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                      The director model evaluates turn order in group chats. Defaults to the main LM Studio server. A smaller, faster model is recommended.
+                    </p>
                   </div>
                 </Card>
               )}

@@ -2,7 +2,8 @@ import{Card} from "./ui/shared";
 import{inputStyle} from "../lib/constants";
 import { Pin, PinOff } from "lucide-react";
 export default function Memory({memories, memoryLog, config, addManualMemory, updateActiveChat, deleteMemory, toggleMemoryPin}){
-    return(<div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 800 }}>
+    return(<div style={{flex: 1, overflowY: "auto", width: "100%"}}>
+          <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 10, width: "100%", margin: "0 auto", maxWidth: 800 }}>
             <div style={{ display: "flex", gap: 8 }}>
               <textarea id="manualMem" placeholder="Add a manual memory entry…" style={{ ...inputStyle, flex: 1, minHeight: 58, resize: "vertical" }} />
               <button onClick={() => { const el = document.getElementById("manualMem"); if (el?.value.trim()) { addManualMemory(el.value.trim()); el.value = ""; } }} style={{ ...inputStyle, cursor: "pointer", alignSelf: "flex-end", whiteSpace: "nowrap" }}>Add memory</button>
@@ -34,6 +35,6 @@ export default function Memory({memories, memoryLog, config, addManualMemory, up
                 </Card>
               ))
             }
-          </div>
+          </div></div>
     );
 }

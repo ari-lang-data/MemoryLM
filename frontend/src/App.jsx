@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI, episodicAPI } from "./lib/api";
+import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI, episodicAPI, eventsAPI } from "./lib/api";
 
 import useEmbedder from "./hooks/useEmbedder";
 import { useEventQueue } from "./hooks/useEventQueue";
@@ -49,6 +49,9 @@ import {Card,CardTitle,Row} from "./components/ui/shared";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [powerUser,     setPowerUser]     = useState(() => localStorage.getItem("memorylm_power_user") === "true");
+  const [directorUrl,   setDirectorUrl]   = useState(() => localStorage.getItem("memorylm_director_url")   ?? "http://localhost:1234");
+  const [directorModel, setDirectorModel] = useState(() => localStorage.getItem("memorylm_director_model") ?? "");
   const [chats,          setChats]          = useState([]);
   const [memories, setMemories] = useState([]);
   const [editingMessage, setEditingMessage] = useState(null); // holds { index, draft }
@@ -77,9 +80,9 @@ export default function App() {
   const [activeCharId,  setActiveCharId]  = useState(null);
   const [userCharId,    setUserCharId]    = useState(null);
   const [groupChatMembers,    setGroupChatMembers]    = useState([]);
-  const [pendingGroupTurn,    setPendingGroupTurn]    = useState(null); // { charId, reason }
   const [groupSetupOpen,      setGroupSetupOpen]      = useState(false);
-  const autoTurnCountRef = useRef(0);
+  const [narrativeQueue,        setNarrativeQueue]        = useState([]); // FIFO queue of pending narrative turns
+  const [activePendingNarrative, setActivePendingNarrative] = useState(null); // { charId, reason, itemId }
   const [extracting, setExtracting] = useState(false);
   const [nodes,          setNodes]          = useState([]);
   const [activeChildren, setActiveChildren] = useState({});
@@ -105,6 +108,9 @@ export default function App() {
 
   useEffect(() => { configRef.current  = config;      }, [config]);
   useEffect(() => { lmUrlRef.current   = lmStudioUrl; }, [lmStudioUrl]);
+  useEffect(() => { localStorage.setItem("memorylm_power_user",     powerUser);    }, [powerUser]);
+  useEffect(() => { localStorage.setItem("memorylm_director_url",   directorUrl);  }, [directorUrl]);
+  useEffect(() => { localStorage.setItem("memorylm_director_model", directorModel);}, [directorModel]);
   useEffect(() => { chatNodesRef.current          = nodes;          }, [nodes]);
   useEffect(() => { chatActiveChildrenRef.current = activeChildren; }, [activeChildren]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -112,11 +118,6 @@ export default function App() {
     if (!activeChatId) return;
     memoriesAPI.getByChat(activeChatId).then(setMemories).catch(console.error);
   }, [activeChatId]);
-  useEffect(() => {
-    if (!activeChatId || nodes.length === 0) return;
-    if (nodesChatRef.current !== activeChatId) return; // guard — don't save stale nodes
-    messagesAPI.save(activeChatId, nodes, activeChildren).catch(console.error);
-  }, [nodes, activeChildren, activeChatId]);
   useEffect(() => { activeChatIdRef.current = activeChatId; }, [activeChatId]);
 
   const { theme, setTheme, themes } = useTheme();
@@ -132,6 +133,10 @@ export default function App() {
     onFastForward:    sendMessage,
     loading,
   });
+
+  useEffect(() => {
+    eventsAPI.setDirectorConfig(directorUrl, directorModel).catch(console.error);
+  }, [directorUrl, directorModel]);
 
 
   // ── Boot ────────────────────────────────────────────────────────────────────
@@ -345,31 +350,29 @@ export default function App() {
   // ── Chat management ─────────────────────────────────────────────────────────
   function addNode(node) {
     nodesChatRef.current = activeChatId; // mark nodes as belonging to this chat
-    setNodes(prev => {
-      const next = [...prev, node];
-      return next;
-    });
+    setNodes(prev => [...prev, node]);
+    messagesAPI.appendNode(activeChatId, node).catch(console.error);
   }
 
   function updateNode(id, updater) {
     nodesChatRef.current = activeChatId; // mark nodes as belonging to this chat
-    setNodes(prev => {
-      const next = prev.map(n => n.id === id ? updater(n) : n);
-      return next;
-    });
+    setNodes(prev => prev.map(n => n.id === id ? updater(n) : n));
+  }
+
+  function persistNode(id, updates) {
+    messagesAPI.updateNode(activeChatIdRef.current, id, updates).catch(console.error);
   }
 
   function removeNode(id) {
     nodesChatRef.current = activeChatId; // mark nodes as belonging to this chat
-    setNodes(prev => {
-      const next = prev.filter(n => n.id !== id);
-      return next;
-    });
+    setNodes(prev => prev.filter(n => n.id !== id));
+    messagesAPI.deleteNode(activeChatId, id).catch(console.error);
   }
 
   function setActiveChild(parentId, childId) {
     setActiveChildren(prev => {
       const next = { ...prev, [parentId]: childId };
+      messagesAPI.setActiveChildren(activeChatIdRef.current, next).catch(console.error);
       return next;
     });
   }
@@ -508,52 +511,104 @@ export default function App() {
 
   // ―― Events ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
   const { enqueue: enqueueEvent } = useEventQueue(activeChatId, {
-    turn_start: ({ char_id, node_id, reason }) => {
-      // Create placeholder node for incoming group turn
-      const char = characters.find(c => c.id === char_id);
+    turn_start: ({ char_id, node_id }) => {
+      const char     = characters.find(c => c.id === char_id);
+      const parentId = chatNodesRef.current[chatNodesRef.current.length - 1]?.id ?? null;
       addNode({
-        id:          node_id,
-        parentId:    chatNodesRef.current[chatNodesRef.current.length - 1]?.id ?? null,
-        role:        "assistant",
-        content:     "",
+        id:               node_id,
+        parentId,
+        role:             "assistant",
+        content:          "",
         char_id,
-        char_name:   char?.name ?? null,
-        finishReason: "stop",
-        reasoning:   null,
-        injectedMems: 0, injectedLore: 0,
-        injectedMemData: [], injectedLoreData: [],
-        implicit:    false,
-        timestamp:   new Date().toISOString(),
-        regenerated: false,
+        char_name:        char?.name ?? null,
+        finishReason:     "stop",
+        reasoning:        null,
+        injectedMems:     0, injectedLore: 0,
+        injectedMemData:  [], injectedLoreData: [], injectedInferenceData: [],
+        implicit:         false,
+        timestamp:        new Date().toISOString(),
+        regenerated:      false,
       });
+      setActiveChild(parentId, node_id)
     },
 
     token: ({ node_id, content }) => {
       updateNode(node_id, n => ({ ...n, content: n.content + content }));
     },
 
-    turn_completed: ({ char_id, node_id, content }) => {
+    turn_completed: ({ node_id, content, char_id }) => {
       updateNode(node_id, n => ({ ...n, content, finishReason: "stop" }));
-      // Save after each completed turn
       messagesAPI.save(
         activeChatIdRef.current,
         chatNodesRef.current,
         chatActiveChildrenRef.current,
       ).catch(console.error);
-      // Discharge is handled by the backend
+      // Unblock narrative queue if this was an invoked turn
+      if (activePendingNarrative?.charId === char_id) {
+        setActivePendingNarrative(null);
+        // Surface next in queue if any
+        setNarrativeQueue(prev => {
+          if (prev.length === 0) return prev;
+          const [next, ...rest] = prev;
+          setActivePendingNarrative(next);
+          return rest;
+        });
+      }
+      addLog(`Turn completed: ${char_id}`);
     },
 
     turn_dropped: ({ reason, task }) => {
       addLog(`Turn dropped: ${task ?? "unknown"} — ${reason}`);
       setLoading(false);
+      // Unblock narrative queue on failure too
+      setActivePendingNarrative(null);
+      setNarrativeQueue(prev => {
+        if (prev.length === 0) return prev;
+        const [next, ...rest] = prev;
+        setActivePendingNarrative(next);
+        return rest;
+      });
     },
 
-    speaker_queued: ({ char_id, priority, reason }) => {
-      const char = characters.find(c => c.id === char_id);
-      addLog(`Speaker queued: ${char?.name ?? char_id} (${reason}, priority ${priority.toFixed(2)})`);
+    speaker_queued: async ({ char_id, priority, reason, id: itemId }) => {
+      if (reason === "direct_address" || reason === "mentioned") {
+        if (char_id === userCharId) return;
+        try {
+          const lastContent = chatNodesRef.current.slice(-1)[0]?.content ?? "";
+          const queryVec    = await embed(lastContent);
+          const { injected } = await buildInjectedContext(queryVec, lastContent, char_id);
+          await enqueueEvent({
+            kind:      "task",
+            task_type: "Generate",
+            chat_id:   activeChatId,
+            priority,
+            payload: {
+              char_id,
+              messages:      getActivePath(chatNodesRef.current, chatActiveChildrenRef.current)
+                .filter(m => !m.implicit)
+                .map(m => ({ role: m.role, content: m.content })),
+              system_prompt: injected,
+              reason,
+            },
+          });
+        } catch(e) {
+          addLog(`Auto-invoke failed: ${e.message}`);
+        }
+      } else {
+        // narrative_focus / relationship_pressure — queue confirmation
+        const entry = { charId: char_id, reason, itemId };
+        setNarrativeQueue(prev => {
+          if (activePendingNarrative === null && prev.length === 0) {
+            setActivePendingNarrative(entry);
+            return prev;
+          }
+          return [...prev, entry];
+        });
+      }
     },
 
     scene_pause: () => {
+      addLog("Scene pause — no characters queued.");
       setLoading(false);
     },
 
@@ -774,7 +829,6 @@ export default function App() {
     const windowedHistory = window > 0
       ? history.slice(-window * 2)  // *2 because each turn is user+assistant
       : history;
-    const isGroupChat = groupChatMembers.length > 0;
 
     const queryContent = last.implicit
       ? history.filter(m => !m.implicit).slice(-3).map(m => m.content).join(" ")
@@ -803,7 +857,7 @@ export default function App() {
     };
 
     addNode(placeholder);
-    setActiveChildren(prev => ({ ...prev, [parentId]: placeholderId }));
+    setActiveChild(parentId, placeholderId)
 
     const { content: rawReply, finishReason } = await lmFetch(
       windowedHistory.map(m => ({ role: m.role, content: m.content })),
@@ -823,10 +877,20 @@ export default function App() {
       reasoning,
       finishReason,
     }));
+    persistNode(placeholderId, {
+      content:      reply ?? "(no response)",
+      reasoning,
+      finishReason,
+      injectedMems: relMems.length,
+      injectedLore: relLore.length,
+      injectedRefs: {
+        mems: relMems.map(m => ({ id: m.id, score: m.score ?? null, pinned: !!m.pinned })),
+        lore: relLore.map(l => ({ id: l.id, score: l.score ?? null, pinned: !!l.pinned })),
+        inferences: (activeInferences ?? []).map(i => ({ id: i.id, confidence: i.confidence })),
+      },
+    });
 
-    // Save final state
-    const finalNodes = [...chatNodesRef.current, placeholder];
-    await messagesAPI.save(activeChatId, finalNodes, chatActiveChildrenRef.current);
+    const finalNodes = [...nodes, placeholder];
 
     // Auto-summarise using active path
     if(!isRegenerated){
@@ -865,7 +929,6 @@ export default function App() {
 
   async function sendMessage() {
     const cfg = configRef.current;
-    autoTurnCountRef.current = 0;
     const isImplicitContinuation =
       !input.trim() &&
       (cfg.style === "creative" || cfg.style === "roleplay" ||
@@ -896,7 +959,7 @@ export default function App() {
     };
 
     if (parentId) {
-      setActiveChildren(prev => ({ ...prev, [parentId]: userMsg.id }));
+      setActiveChild(parentId, userMsg.id)
     }
 
     addNode(userMsg);
@@ -906,46 +969,57 @@ export default function App() {
     try {
       const history = [...messages, userMsg];
       if (isGroupChat) {
-      // Group chat — enqueue via event queue
-      setLoading(true);
-      const queryVec = await embed(content);
+        setLoading(true);
+        // Reset narrative queue on new user message
+        setNarrativeQueue([]);
+        setActivePendingNarrative(null);
 
-      // Frontend still assembles context — same as before
-      // but now we enqueue rather than call sendMessageWith
-      await enqueueEvent({
-        kind:       "task",
-        task_type:  "Evaluate",
-        chat_id:    activeChatId,
-        priority:   1.0,
-        payload: {
-          content,
-          preset_id:    activePreset,
-          // Pass group member ids so backend can load chars
-          members:      groupChatMembers,
-        },
-      });
+        // Add user node
+        addNode(userMsg);
+        if (parentId) setActiveChild(parentId, userMsg.id)
+        if (!isImplicitContinuation) setInput("");
 
-      // Also enqueue the user's message as a Generate for the current active char
-      // (or skip if no active char — pure group with no designated responder)
-      if (activeCharId) {
-        const injected = await buildInjectedContext(queryVec, content);
-        await enqueueEvent({
-          kind:       "task",
-          task_type:  "Generate",
-          chat_id:    activeChatId,
-          priority:   1.0,
-          payload: {
-            char_id:       activeCharId,
-            messages:      [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
-            system_prompt: injected,
-            reason:        "user_sent",
-          },
-        });
+        try {
+          const queryVec = await embed(content);
+          const { injected } = await buildInjectedContext(queryVec, content, null);
+
+          // Enqueue Evaluate first — director determines turn order
+          await enqueueEvent({
+            kind:      "task",
+            task_type: "Evaluate",
+            chat_id:   activeChatId,
+            priority:  1.0,
+            payload: {
+              content,
+              preset_id: activePreset,
+              members:   groupChatMembers,
+            },
+          });
+
+          // If there's a user-designated model character, enqueue their Generate too
+          if (activeCharId && !groupChatMembers.includes(activeCharId)) {
+            await enqueueEvent({
+              kind:      "task",
+              task_type: "Generate",
+              chat_id:   activeChatId,
+              priority:  1.0,
+              payload: {
+                char_id:       activeCharId,
+                messages:      [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
+                system_prompt: injected,
+                reason:        "user_sent",
+              },
+            });
+          }
+        } catch(e) {
+          addLog(`Group chat error: ${e.message}`);
+          setLoading(false);
+        }
+        return; // don't fall through to standard sendMessageWith
+      } else {
+        // Standard chat — existing sendMessageWith flow unchanged
+        await sendMessageWith(history, userMsg.id);
       }
-    } else {
-      // Standard chat — existing sendMessageWith flow unchanged
-      await sendMessageWith(history, userMsg.id);
-    }
     } catch(e) {
       const errMsg = {
         id: `msg_${Date.now()}`, parentId: userMsg.id,
@@ -1141,79 +1215,79 @@ export default function App() {
     } catch {
       return null;
     }
-  }
-
-  async function runGroupEvaluator(lastReply, history) {
-    if (groupChatMembers.length < 2) return null;
-    const activeChar  = characters.find(c => c.id === activeCharId);
-    const memberChars = characters.filter(c => groupChatMembers.includes(c.id) && c.id !== activeCharId);
-    if (!memberChars.length) return null;
-
-    const memberList = memberChars.map(c => `${c.name} (id: ${c.id})`).join(", ");
-    const transcript = history.slice(-6).map(m => `${m.role === "user" ? "User" : activeChar?.name ?? "Model"}: ${m.content}`).join("\n");
-
-    const { content: raw } = await lmFetch(
-      [{
-        role: "user",
-        content: `Given this conversation and these available characters: ${memberList}
-        
-  Last reply: "${lastReply.slice(0, 300)}"
-
-  Recent transcript:
-  ${transcript}
-
-  Should any of the available characters speak next? Reply ONLY with valid JSON, no preamble:
-  { "shouldSpeak": true|false, "charId": "character_id_or_null", "reason": "direct_address|narrative|none" }
-
-  Rules:
-  - direct_address: a character was explicitly spoken to by name
-  - narrative: a character would naturally respond given the story context
-  - Be conservative — default to false if unclear`,
-      }],
-      "You are a narrative routing assistant. Decide if a character should speak. Return only JSON.",
-      configRef, lmUrlRef, null, 200
-    );
-
-    try {
-      const clean  = raw.replace(/```json|```/g, "").trim();
-      const result = JSON.parse(clean);
-      if (!result.shouldSpeak || !result.charId) return null;
-      // Verify charId is actually a group member
-      if (!groupChatMembers.includes(result.charId)) return null;
-      return { charId: result.charId, reason: result.reason };
-    } catch {
-      return null;
-    }
-  }
-
-  async function invokeGroupTurn(charId) {
-    if (!charId || charId === userCharId) return;
-    setLoading(true);
-    try {
-      const history = getActivePath(chatNodesRef.current, chatActiveChildrenRef.current)
-        .filter(m => !m.implicit)
-        .map(m => ({ role: m.role, content: m.content }));
-      const lastId = chatNodesRef.current[chatNodesRef.current.length - 1]?.id ?? null;
-      await sendMessageWith(history, lastId, false, charId);
-    } finally {
-      setLoading(false);
-      autoTurnCountRef.current = 0;
-    }
-  }
+  }  
 
   async function startGroupChat(memberIds) {
     setGroupSetupOpen(false);
-    await createNewChat();
     setGroupChatMembers(memberIds);
-    // Bind immediately since members are known upfront
-    const newChatId = activeChatIdRef.current;
-    await chatsAPI.bindCharacters(newChatId, {
-      active_char_id: null,  // intentionally unbound — rotates per turn
+
+    // Create new chat
+    const newId    = crypto.randomUUID();
+    const newChat  = {
+      id:         newId,
+      title:      "Group Chat",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      messages:   [],
+    };
+    await chatsAPI.create(newId, newChat.title, newChat.created_at, newChat.updated_at);
+
+    // Bind immediately — group chats bind at creation, not first message
+    await chatsAPI.bindCharacters(newId, {
+      active_char_id: null,
       user_char_id:   userCharId ?? null,
       chat_type:      "group",
       members:        memberIds,
     });
+
+    setChats(prev => [newChat, ...prev]);
+    setActiveChatId(newId);
+    nodesChatRef.current = newId;
+    setNodes([]);
+    setActiveChildren({});
+    saveStorage(STORAGE_KEYS.activeChat, newId);
     setSidebarOpen(false);
+  }
+
+  async function invokeNarrativeTurn() {
+    if (!activePendingNarrative) return;
+    const { charId } = activePendingNarrative;
+    if (charId === userCharId) { skipNarrativeTurn(); return; }
+
+    try {
+      const queryVec = await embed(
+        messages.slice(-1)[0]?.content ?? ""
+      );
+      const { injected } = await buildInjectedContext(queryVec, messages.slice(-1)[0]?.content ?? "", charId);
+
+      await enqueueEvent({
+        kind:      "task",
+        task_type: "Generate",
+        chat_id:   activeChatId,
+        priority:  0.9,
+        payload: {
+          char_id:       charId,
+          messages:      messages.map(m => ({ role: m.role, content: m.content })),
+          system_prompt: injected,
+          reason:        "narrative_focus",
+        },
+      });
+
+      addLog(`Narrative turn invoked: ${charId}`);
+    } catch(e) {
+      addLog(`Invoke failed: ${e.message}`);
+    }
+  }
+
+  function skipNarrativeTurn() {
+    // Drop current, surface next
+    setActivePendingNarrative(null);
+    setNarrativeQueue(prev => {
+      if (prev.length === 0) return prev;
+      const [next, ...rest] = prev;
+      setActivePendingNarrative(next);
+      return rest;
+    });
   }
 
   // ── Presets ─────────────────────────────────────────────────────────────────
@@ -1304,6 +1378,7 @@ export default function App() {
   const statusColor     = { ready: "#1D9E75", loading: "#BA7517", error: "#E24B4A", idle: "#888780" }[embedderStatus];
   const statusLabel     = { ready: "Embedder ready", loading: "Loading model…", error: "Embedder error", idle: "Embedder idle" }[embedderStatus];
   const activePresetObj = (presets ?? DEFAULT_PRESETS).find(p => p.id === activePreset);
+  const isGroupChat = groupChatMembers.length > 0 && config?.style === "roleplay";
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ fontFamily: "var(--font-sans)", display: "flex", flexDirection: "column", height: "100vh", background: "var(--color-background-tertiary)" }}>
@@ -1426,15 +1501,11 @@ export default function App() {
             onExtractEntities={extractEntities}
             extracting={extracting}
             confirm={confirm}
-            pendingGroupTurn={pendingGroupTurn}
-            characters={characters}
-            onInvokeGroupTurn={async () => {
-              if (!pendingGroupTurn) return;
-              setPendingGroupTurn(null);
-              autoTurnCountRef.current += 1;
-              await invokeGroupTurn(pendingGroupTurn.charId);
-            }}
-            onSkipGroupTurn={() => setPendingGroupTurn(null)}
+            groupChatMembers={groupChatMembers}
+            isGroupChat={isGroupChat}
+            pendingNarrativeTurn={activePendingNarrative}
+            onInvokeNarrativeTurn={invokeNarrativeTurn}
+            onSkipNarrativeTurn={skipNarrativeTurn}
           />
         )}
 
@@ -1534,6 +1605,12 @@ export default function App() {
         setTheme={setTheme} 
         themes={themes}
         confirm={confirm}
+        powerUser={powerUser}
+        setPowerUser={setPowerUser}
+        directorUrl={directorUrl}
+        setDirectorUrl={setDirectorUrl}
+        directorModel={directorModel}
+        setDirectorModel={setDirectorModel}
       />
       {groupSetupOpen && (
         <GroupChatSetupModal

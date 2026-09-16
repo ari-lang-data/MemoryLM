@@ -5,25 +5,27 @@ from handlers.evaluate import handle_evaluate
 from handlers.generate import handle_generate
 import os
 
-PRESET_ID = os.getenv("DEFAULT_PRESET_ID", "")
-
 async def process_item(item: QueueItem):
+    print(f"[processor] processing {item.kind} {item.task_type} for chat {item.chat_id}")
     if item.kind == "task":
         if item.task_type == "Evaluate":
-            await handle_evaluate(item, PRESET_ID)
+            preset_id = item.payload.get("preset_id", "")
+            await handle_evaluate(item, preset_id)
         elif item.task_type == "Generate":
+            print(f"[processor] generate payload keys: {list(item.payload.keys())}")
             await handle_generate(item)
-        # Summarise and ImageRequest handlers slot in here in later phases
-    # Pure events are logged/buffered by enqueue — no processing needed
+    print(f"[processor] done {item.id}")
 
 async def run_processor(chat_id: str):
     """Per-chat queue processor. Runs until queue is empty then exits."""
+    print(f"[processor] started for chat {chat_id}")
     q = get_queue(chat_id)
     while True:
         try:
             _, _, item = await asyncio.wait_for(q.get(), timeout=60.0)
         except asyncio.TimeoutError:
             # Queue idle for 60s — exit, will be restarted on next enqueue
+            print(f"[processor] idle timeout, exiting for chat {chat_id}")
             break
 
         item.status = "processing"

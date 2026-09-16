@@ -7,8 +7,11 @@ from database.queue import (
     get_buffered_events, restore_activation,
 )
 from models.events import QueueItem
+from models.schemas import SuccessResponse
 from database.sqlite import get_session, engine
 from sqlmodel import Session, text
+from database.queue_processor import ensure_processor
+import os
 import asyncio
 import json
 
@@ -39,6 +42,8 @@ async def enqueue_item(body: EnqueueRequest):
         timeout_s=  body.timeout_s,
     )
     await enqueue(item)
+    await ensure_processor(item.chat_id)
+    print(f"[enqueue] {item.kind} {item.task_type} chat={item.chat_id} id={item.id}")
     return {"id": item.id, "status": "queued"}
 
 # ── SSE endpoint ──────────────────────────────────────────────────────────────
@@ -82,3 +87,13 @@ async def stream_events(chat_id: str, since: Optional[str] = None):
             "X-Accel-Buffering": "no",
         },
     )
+
+class DirectorConfig(BaseModel):
+    url:   str
+    model: str = ""
+
+@router.post("/director-config", response_model=SuccessResponse)
+async def set_director_config(body: DirectorConfig):
+    os.environ["DIRECTOR_URL"]   = body.url
+    os.environ["DIRECTOR_MODEL"] = body.model
+    return SuccessResponse()

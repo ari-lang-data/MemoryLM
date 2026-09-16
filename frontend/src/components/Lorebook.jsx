@@ -4,7 +4,7 @@ import {Card} from "./ui/shared";
 import { Link, Pin, PinOff, X } from "lucide-react";
 export default function Lorebook({lorebook,lorebookDraft,editingLore, setEditingLore, TYPE_COLORS,LORE_TYPES, setLorebookDraft, addLorebookEntry, deleteLorebookEntry, toggleLorePin,onOpenEdges, loreEdgePanel, setLoreEdgePanel, entities, graphAPI}){
     return(
-        <div style={{ flex: 1, display: "flex", overflow: "hidden", width: "100%", maxWidth: 800 }}>
+        <div style={{ flex: 1, display: "flex", overflow: "hidden", width: "100%", margin: "0 auto", maxWidth: 800 }}>
             <div style={{ flex: 1, overflowY: "auto", padding: 16, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column", gap: 10 }}>
               {lorebook.length === 0
                 ? <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 13, padding: 32 }}>No lorebook entries yet. Add characters, locations, factions, world rules…</div>

@@ -1,6 +1,6 @@
 import asyncio
 import json
-from database.queue import push_sse, discharge, enqueue
+from database.queue import push_sse, discharge, enqueue, get_sse_queue
 from database.graph import execute as graph_execute
 from models.events import QueueItem
 import httpx
@@ -43,15 +43,16 @@ async def handle_generate(item: QueueItem):
 
     # ── Stream from LM ───────────────────────────────────────────────────────
     accumulated = ""
+    full_messages = [{"role": "system", "content": injected}] + messages if injected else messages
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             async with client.stream(
                 "POST",
                 f"{LM_URL}/v1/chat/completions",
+
                 json={
                     "model":      model or None,
-                    "messages":   messages,
-                    "system":     injected,
+                    "messages":   full_messages,
                     "stream":     True,
                     "max_tokens": item.payload.get("max_tokens", 1024),
                 },
@@ -68,13 +69,10 @@ async def handle_generate(item: QueueItem):
                         if content:
                             accumulated += content
                             # Token events are NOT buffered — ephemeral
-                            get_sse_queue = __import__(
-                                "database.queue", fromlist=["get_sse_queue"]
-                            ).get_sse_queue
                             try:
                                 get_sse_queue(chat_id).put_nowait({
                                     "event": "token",
-                                    "data":  {
+                                    "data": {
                                         "chat_id": chat_id,
                                         "node_id": node_id,
                                         "content": content,

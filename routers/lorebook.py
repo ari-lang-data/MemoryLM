@@ -120,3 +120,12 @@ def get_pinned_lorebook():
             results["metadatas"] or []
         )
     ]
+
+@router.get("/{lore_id}")
+def get_lore_entry(lore_id: str):
+    col = get_lorebook_collection()
+    existing = col.get(ids=[lore_id], include=["documents", "metadatas"])
+    if not existing["ids"]:
+        raise HTTPException(status_code=404, detail="Lorebook entry not found")
+    meta = existing["metadatas"][0]
+    return {"id": lore_id, "content": existing["documents"][0], **meta}

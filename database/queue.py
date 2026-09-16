@@ -29,7 +29,7 @@ STIMULUS_TABLE = {
 
 def get_queue(chat_id: str) -> asyncio.PriorityQueue:
     if chat_id not in _queues:
-        _queues[chat_id] = asyncio.PriorityQueue()
+        _queues[chat_id] = asyncio.PriorityQueue(maxsize=100)
     return _queues[chat_id]
 
 def get_sse_queue(chat_id: str) -> asyncio.Queue:
@@ -39,8 +39,21 @@ def get_sse_queue(chat_id: str) -> asyncio.Queue:
 
 async def enqueue(item: QueueItem):
     q = get_queue(item.chat_id)
-    # PriorityQueue is min-heap; negate priority for max-heap behaviour
-    await q.put((-item.priority, item.created_at.isoformat(), item))
+    try:
+        await asyncio.wait_for(
+            q.put((-item.priority, item.created_at.isoformat(), item)),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        push_sse(item.chat_id, {
+            "event": "turn_dropped",
+            "id":    item.id,
+            "data":  {
+                "chat_id": item.chat_id,
+                "reason":  "queue_full",
+                "task":    item.task_type,
+            },
+        })
 
 def push_sse(chat_id: str, event: dict):
     buf = _sse_buffers[chat_id]

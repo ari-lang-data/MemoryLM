@@ -205,17 +205,6 @@ async def handle_evaluate(item: QueueItem, preset_id: str):
 
     # ── 6. Enqueue Generate tasks in priority order ──────────────────────────
     for decision in decisions:
-        await enqueue(QueueItem(
-            kind=       "task",
-            task_type=  "Generate",
-            chat_id=    chat_id,
-            priority=   decision.priority,
-            caused_by=  item.id,
-            payload={
-                "char_id": decision.speaker,
-                "reason":  decision.reason,
-            },
-        ))
         push_sse(chat_id, {
             "event": "speaker_queued",
             "id":    item.id,

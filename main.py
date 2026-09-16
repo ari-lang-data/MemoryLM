@@ -8,6 +8,7 @@ from database.graph import init_graph, switch_to_sqlite
 from routers import events
 from database.queue_processor import ensure_processor
 from database.queue import enqueue as queue_enqueue
+from database.migrate_messages import migrate_json_messages_to_sqlite
 import sys
 
 load_dotenv()
@@ -31,6 +32,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     init_db()
+    migrate_json_messages_to_sqlite()
 
     try:
         backend = init_graph()

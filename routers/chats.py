@@ -24,6 +24,7 @@ def get_all(session: Session = Depends(get_session)):
             "updated_at":          c.updated_at,
             "chat_type":           c.chat_type,
             "character_bindings":  json.loads(c.character_bindings or "{}"),
+            "activation_state":    c.activation_state,
         }
         for c in chats
     ]

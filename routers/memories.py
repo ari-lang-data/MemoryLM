@@ -236,3 +236,11 @@ def mark_retrieved(memory_id: str, body: MemoryRetrievalUpdate):
         }]
     )
     return SuccessResponse()
+
+@router.get("/{memory_id}")
+def get_memory(memory_id: str):
+    col = get_memories_collection()
+    existing = col.get(ids=[memory_id], include=["documents", "metadatas"])
+    if not existing["ids"]:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"id": memory_id, "summary": existing["documents"][0], **existing["metadatas"][0]}
