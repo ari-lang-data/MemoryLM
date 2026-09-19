@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timezone
 from sqlmodel import Session, select
-from database.sqlite import World, EpisodicInference, engine
+from backend.database.sqlite import World, EpisodicInference, engine
 from typing import Optional
 import json, math
 

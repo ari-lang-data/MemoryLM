@@ -2,13 +2,13 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlmodel import Session
 from typing import Optional
 from datetime import datetime, timezone
-from database.sqlite import (
+from backend.database.sqlite import (
     get_session,
     create_inference, get_inferences, get_inference,
     resolve_inference, update_inference_confidence, delete_inference,
     create_fact, get_facts, get_fact, delete_fact,
 )
-from models.schemas import (
+from backend.models.schemas import (
     InferenceCreate, InferenceResolve, InferenceConfidenceUpdate,
     FactCreate, SuccessResponse,
 )

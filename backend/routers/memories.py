@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
-from database.chroma import get_memories_collection
-from models.schemas import MemoryAdd, MemoryUpdate, MemoryQuery, SuccessResponse
+from backend.database.chroma import get_memories_collection
+from backend.models.schemas import MemoryAdd, MemoryUpdate, MemoryQuery, SuccessResponse
 import math
 from datetime import datetime, timezone
 from pydantic import BaseModel

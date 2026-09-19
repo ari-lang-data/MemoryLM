@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from database.chroma import get_clusters_collection, get_memories_collection
-from models.schemas import SuccessResponse
+from backend.database.chroma import get_clusters_collection, get_memories_collection
+from backend.models.schemas import SuccessResponse
 import json
 import numpy as np
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session
 from typing import Optional
-from database.sqlite import (
+from backend.database.sqlite import (
     get_session,
     add_message_node, update_message_node, delete_message_node,
     get_chat_message_nodes, clear_chat_messages, replace_chat_messages,

@@ -37,6 +37,7 @@
 - Lorebook is globally available
 - Added LLM presets
 - Markdown rendering for chats, with syntax highlighting
+- Stable commit hash: `f579aeb3acb9afd23c18f18991acabf9b99d6584`
 
 # Phase 5 ― Streaming
 - Everything in Phase 4
@@ -49,6 +50,7 @@
 - Renaming chats is possible via double-click
 - Injection panel (for most recent assistant message) to show injected context
 - Re-embedded lorebook via title and tags only
+- Stable commit hash: `79f504b6964989a432a97e85771da65d5aa100d0`
 
 # Phase 6 ― Branching
 - Everything in Phase 5
@@ -58,6 +60,7 @@
 - Contextual retrieval modes
 - Importance heuristics
 - Settings panel restructured into tabbed interface
+- Stable commit hash: `854b9d673cb8441da962d8c1ca9dc22556128a8e`
 
 # Phase 7 ― Graphs
 - Everything in Phase 6
@@ -67,6 +70,7 @@
 - Compressed presets to 4 configurable ones: Assistant, Coding, Creative, and Roleplay
 - Roleplay uses template variables {$char} and {$usr} for model and user personas
 - Added a context window slider to dictate history sent to LLM when generating a response
+- Stable commit hash: `34c332ddbd3486f9648dd3b384f2df39666cc8a7`
 
 # Phase 8 ― Episodic Memory
 - Added episodic memory
@@ -78,3 +82,4 @@
 - Turned chat sidebar and injection panels into frosted glass panels
 - Added themes (Dark, Light, Sepia, and Midnight)
 - Added an experimental group chat preview (currently unstable)
+- Stable commit (except group chat) hash: `09cfb089f5375bb59925c7bdf2d5a99530425d22`

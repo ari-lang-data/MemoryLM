@@ -2,15 +2,15 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
-from database.queue import (
+from backend.database.queue import (
     enqueue, get_sse_queue, push_sse,
     get_buffered_events, restore_activation,
 )
-from models.events import QueueItem
-from models.schemas import SuccessResponse
-from database.sqlite import get_session, engine
+from backend.models.events import QueueItem
+from backend.models.schemas import SuccessResponse
+from backend.database.sqlite import get_session, engine
 from sqlmodel import Session, text
-from database.queue_processor import ensure_processor
+from backend.database.queue_processor import ensure_processor
 import os
 import asyncio
 import json

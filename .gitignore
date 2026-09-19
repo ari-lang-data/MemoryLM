@@ -1,12 +1,8 @@
 venv/
 chroma_data/
-memorylm.db
-.env
 __pycache__/
-*.pyc
-messages/
-messages_backup/
 graph.duckdb
 graph_backup.db
 graph.duckdb.wal
 graph.duckdb.tmp
+memorylm.db

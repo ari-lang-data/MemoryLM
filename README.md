@@ -29,7 +29,8 @@ The same pipeline serves a **Lorebook** — a structured knowledge base of chara
 - 🧠 Reasoning parsing — infrastructure for stripping and displaying model reasoning traces when exposed by the inference server
 - 🌿 Branching — fork any message to explore an alternative direction, or use regenerate to create an inline branch; branches are navigable without leaving the chat
 - 🕸️ Entity graph — on-demand extraction builds a force-directed knowledge graph of characters, locations, and relationships, with graph-aware retrieval to surface contextually connected memories
-- 🎭 Character tab — roleplay presets support avatar images and character sheets; the character panel is scoped to roleplay mode while creative mode uses the research extraction pipeline
+- 🎭 Character tab — roleplay preset supports avatar images and character sheets; the character panel is scoped to roleplay mode while creative mode uses the research extraction pipeline
+- 🌍 Worlds — roleplay preset supports creating worlds with fantasy world calendars, time advances according to chat context and also two minutes per turn; in group chats, idle advancements occur once per round
 - 📌 Pinning — individual memories and lorebook entries can be pinned to guarantee injection regardless of retrieval score
 - 🎯 Contextual retrieval — a heuristic classifier selects the retrieval mode (semantic, recency, hybrid, graph-traversal) based on the nature of each message
 - ⚖️ Importance heuristics + semantic clustering — memories are scored for importance at write time and clustered to reduce redundancy
@@ -38,7 +39,7 @@ The same pipeline serves a **Lorebook** — a structured knowledge base of chara
 - 📋 Facts — discrete facts extracted from episodic memories stored in a dedicated table, distinct from inferences and summaries
 - 🎭 Preferred reference forms — characters carry narrative alias, formal address, and informal address fields; injected explicitly into the system prompt so local models refer to characters naturally rather than by full name
 - ⚙️ Combined Settings & Presets modal — gear icon in the chat sidebar footer opens a unified modal; presets and settings consolidated into a single interface
-- 🎨 Themes — Light, Dark, Sepia (warm library aesthetic), and Midnight (deep navy); switchable from Settings
+- 🎨 Themes — Light, Dark, Sepia (warm library aesthetic), Dark-Library, and Midnight (deep navy); switchable from Settings
 - ⌨️ Keyboard shortcuts — navigation, chat, graph, and character shortcuts throughout; F1 opens a reference modal
 - 🪟 Frosted glass panels — chat sidebar and injection panel use theme-aware frosted glass backgrounds computed via Fermi-Dirac function
 - 🔔 Confirmation modals — all destructive actions use a reusable modal rather than browser confirm dialogs
@@ -83,7 +84,7 @@ Open `http://localhost:5173`. In Settings, set your LM Studio server URL (defaul
 | Data | Storage |
 |------|---------|
 | Chat metadata | SQLite |
-| Messages | JSON files (per chat) |
+| Messages | SQLite |
 | Memories | ChromaDB |
 | Lorebook | ChromaDB |
 | Presets | SQLite |
@@ -93,7 +94,7 @@ Open `http://localhost:5173`. In Settings, set your LM Studio server URL (defaul
 
 ## Preset Styles
 
-Each persona preset carries a `style` field that affects chat behaviour:
+Each preset carries a `style` field that affects chat behaviour:
 
 | Style | Continuation button | Notes |
 |-------|-------------------|-------|

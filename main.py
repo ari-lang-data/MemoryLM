@@ -1,14 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from database.sqlite import init_db
+from backend.database.sqlite import init_db
 from dotenv import load_dotenv
 import os
-from routers import memories, lorebook, chats, presets, messages, clusters, graph, episodic
-from database.graph import init_graph, switch_to_sqlite
-from routers import events, worlds
-from database.queue_processor import ensure_processor
-from database.queue import enqueue as queue_enqueue
-from database.migrate_messages import migrate_json_messages_to_sqlite
+from backend.routers import memories, lorebook, chats, presets, messages, clusters, graph, episodic
+from backend.database.graph import init_graph, switch_to_sqlite
+from backend.routers import events, worlds
+from backend.database.queue_processor import ensure_processor
+from backend.database.queue import enqueue as queue_enqueue
+from backend.database.migrate_messages import migrate_json_messages_to_sqlite
 import sys
 
 load_dotenv()

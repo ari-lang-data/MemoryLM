@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from database.graph import execute, executemany
-from models.schemas import SuccessResponse, CharacterCardUpdate
+from backend.database.graph import execute, executemany
+from backend.models.schemas import SuccessResponse, CharacterCardUpdate
 from datetime import datetime, timezone
 import json
 import uuid

@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
-from database.sqlite import get_session, create_chat, get_all_chats, get_chat, update_chat, delete_chat
-from database.chroma import get_memories_collection
-from models.schemas import ChatCreate, ChatUpdate, ChatBindCharacters, SuccessResponse
-from database.sqlite import bind_chat_characters
+from backend.database.sqlite import get_session, create_chat, get_all_chats, get_chat, update_chat, delete_chat
+from backend.database.chroma import get_memories_collection
+from backend.models.schemas import ChatCreate, ChatUpdate, ChatBindCharacters, SuccessResponse
+from backend.database.sqlite import bind_chat_characters
 from pydantic import BaseModel
 from typing import Optional
 import json
@@ -63,7 +63,7 @@ def delete(chat_id: str, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Chat not found")
     return SuccessResponse()
 
-from database.sqlite import set_chat_world
+from backend.database.sqlite import set_chat_world
 
 class ChatWorldUpdate(BaseModel):
     world_id: Optional[str] = None
