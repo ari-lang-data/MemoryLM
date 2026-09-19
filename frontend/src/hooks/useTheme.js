@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const THEMES = ["dark", "midnight", "sepia", "light"];
+const THEMES = ["dark", "midnight", "dark-library", "sepia", "light"];
 const STORAGE_KEY = "memorylm_theme";
 
 export function useTheme() {

@@ -1,13 +1,53 @@
 import{Card} from "./ui/shared";
 import{inputStyle} from "../lib/constants";
 import { Pin, PinOff } from "lucide-react";
-export default function Memory({memories, memoryLog, config, addManualMemory, updateActiveChat, deleteMemory, toggleMemoryPin}){
+import ReactMarkdown from "react-markdown";
+import { frostedGlassValues } from "../lib/fermiDirac";
+
+const { bgAlpha, blurPx, saturate } = frostedGlassValues();
+
+export default function Memory({memories, memoryLog, config, addManualMemory, updateActiveChat, deleteMemory, toggleMemoryPin, activeWorld, worldTime}){
     return(<div style={{flex: 1, overflowY: "auto", width: "100%"}}>
           <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 10, width: "100%", margin: "0 auto", maxWidth: 800 }}>
+
+            {/* World setting card — only when the active chat has a world */}
+            {activeWorld && (
+              <div style={{
+                background:           `rgba(var(--glass-rgb), ${bgAlpha})`,
+                backdropFilter:       `blur(${blurPx}px) saturate(${saturate})`,
+                WebkitBackdropFilter: `blur(${blurPx}px) saturate(${saturate})`,
+                border:               "0.5px solid var(--color-border-tertiary)",
+                borderRadius:         "var(--border-radius-lg)",
+                padding:              "14px 18px",
+                display:              "flex",
+                flexDirection:        "column",
+                gap:                  6,
+              }}>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>{activeWorld.name}</p>
+                  {worldTime && <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>{worldTime}</span>}
+                </div>
+                {activeWorld.llm_context && (
+                  <div style={{ fontSize: 12, lineHeight: 1.6, color: "var(--color-text-secondary)" }}>
+                    <ReactMarkdown
+                      components={{
+                        p({ children })  { return <p style={{ margin: "0 0 6px" }}>{children}</p>; },
+                        ul({ children })  { return <ul style={{ margin: "0 0 6px", paddingLeft: 18 }}>{children}</ul>; },
+                        li({ children })  { return <li style={{ marginBottom: 2 }}>{children}</li>; },
+                      }}
+                    >
+                      {activeWorld.llm_context}
+                    </ReactMarkdown>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 8 }}>
               <textarea id="manualMem" placeholder="Add a manual memory entry…" style={{ ...inputStyle, flex: 1, minHeight: 58, resize: "vertical" }} />
               <button onClick={() => { const el = document.getElementById("manualMem"); if (el?.value.trim()) { addManualMemory(el.value.trim()); el.value = ""; } }} style={{ ...inputStyle, cursor: "pointer", alignSelf: "flex-end", whiteSpace: "nowrap" }}>Add memory</button>
             </div>
+            
             {memoryLog.length > 0 && (
               <div style={{ ...inputStyle, fontSize: 11, fontFamily: "var(--font-mono)", minHeight: 65, maxHeight: 95, overflowY: "auto", lineHeight: 1.6 }}>
                 {memoryLog.map((l, i) => <div key={i}>{l}</div>)}

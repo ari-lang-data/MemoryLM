@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap');
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* ── Dark (default) ────────────────────────────────────────────────────────── */
@@ -11,6 +11,7 @@
   --color-background-success:   #1a2e1a;
   --color-background-danger:    #2e1a1a;
 
+  --color-app-name:       #e8e8e8;
   --color-text-primary:   #e8e8e8;
   --color-text-secondary: #a0a0a0;
   --color-text-tertiary:  #606060;
@@ -40,6 +41,7 @@
   --color-background-success:   #0e2218;
   --color-background-danger:    #220e18;
 
+  --color-app-name:       #dde3f5;
   --color-text-primary:   #dde3f5;
   --color-text-secondary: #8892b0;
   --color-text-tertiary:  #4a5270;
@@ -59,33 +61,64 @@
   --glass-rgb: 13, 15, 26;
 }
 
-/* ── Sepia ──────────────────────────────────────────────────────────────────── */
-/* Candlelight on vellum — regency private library, evening light              */
+/* ── Library ────────────────────────────────────────────────────────────────── */
+/* Aged vellum, walnut, brass, and lamplight — a proper private library.       */
 [data-theme="sepia"] {
-  --color-background-primary:   #f2e8d5;
-  --color-background-secondary: #e8dcc4;
-  --color-background-tertiary:  #f9f3e8;
-  --color-background-info:      #e8d8b8;
-  --color-background-success:   #d8e8cc;
-  --color-background-danger:    #f0d8cc;
+  --color-background-primary:   #E5D6B9;
+  --color-background-secondary: #e8decc;
+  --color-background-tertiary:  #faf6ee;
+  --color-background-info:      #e5dbc4;
+  --color-background-success:   #dce5d3;
+  --color-background-danger:    #ead6d0;
 
-  --color-text-primary:   #2c1810;
-  --color-text-secondary: #6b4c3b;
-  --color-text-tertiary:  #a8886f;
-  --color-text-info:      #5c4a8a;
-  --color-text-success:   #3a6640;
-  --color-text-danger:    #8a3a2e;
-  --color-send-button:    #8b5e3c;
+  --color-app-name:       #754e2c;
+  --color-text-primary:   #29231c;
+  --color-text-secondary: #66594a;
+  --color-text-tertiary:  #8d7d69;
+  --color-text-info:      #5d6280;
+  --color-text-success:   #496344;
+  --color-text-danger:    #8a4137;
+  --color-send-button:    #875a35;
 
-  --color-bubble-user:      #e0d0b0;
-  --color-bubble-user-text: #2c1810;
-  --color-bubble-model:     #ede4d0;
+  --color-bubble-user:      #dfd1b5;
+  --color-bubble-user-text: #29231c;
+  --color-bubble-model:     #eee6d6;
 
-  --color-border-primary:   #c4a882;
-  --color-border-secondary: #d4b896;
-  --color-border-tertiary:  #deccaa;
-  --color-border-danger:    #c48060;
-  --glass-rgb: 234,224,205;
+  --color-border-primary:   #bba47c;
+  --color-border-secondary: #d0b992;
+  --color-border-tertiary:  #dfceb0;
+  --color-border-danger:    #bb7868;
+  --glass-rgb: 232, 222, 204;
+}
+
+/* ── Dark Library ───────────────────────────────────────────────────────────── */
+/* Walnut, dark leather, tarnished brass, and warm lamplight.                  */
+[data-theme="dark-library"] {
+  --color-background-primary:   #15120f;
+  --color-background-secondary: #1d1814;
+  --color-background-tertiary:  #0f0d0b;
+  --color-background-info:      #242018;
+  --color-background-success:   #1c241a;
+  --color-background-danger:    #281916;
+
+  --color-app-name:       #DBA16E;
+  --color-text-primary:   #e7dece;
+  --color-text-secondary: #b5a790;
+  --color-text-tertiary:  #7f725f;
+  --color-text-info:      #9a9aab;
+  --color-text-success:   #8ca47d;
+  --color-text-danger:    #c17b6e;
+  --color-send-button:    #a77b46;
+
+  --color-bubble-user:      #292119;
+  --color-bubble-user-text: #e1d6c3;
+  --color-bubble-model:     #1c1814;
+
+  --color-border-primary:   #66553b;
+  --color-border-secondary: #493d2d;
+  --color-border-tertiary:  #342c22;
+  --color-border-danger:    #63352e;
+  --glass-rgb: 29, 24, 20;
 }
 
 /* ── Light ──────────────────────────────────────────────────────────────────── */
@@ -97,6 +130,7 @@
   --color-background-success:   #e8f5e8;
   --color-background-danger:    #fce8e8;
 
+  --color-app-name:       #111111;
   --color-text-primary:   #111111;
   --color-text-secondary: #555555;
   --color-text-tertiary:  #999999;
@@ -142,9 +176,13 @@ textarea, input, select { color-scheme: dark; }
 /* ── CSS custom properties ──────────────────────────────────────────────────── */
 :root {
   --font-sans: 'IBM Plex Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Source Serif 4';
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   --border-radius-sm: 4px;
   --border-radius-md: 8px;
   --border-radius-lg: 12px;
+
+  --markdown-paragraph-margin: 8px;
+  --rp-paragraph-margin: 16px;
 }

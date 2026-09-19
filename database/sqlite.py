@@ -5,6 +5,7 @@ from typing import Sequence
 import json
 from dotenv import load_dotenv
 import os
+import datetime
 
 # ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,7 @@ class Chat(SQLModel, table=True):
     title: str = Field(default="New Chat")
     chat_type:           str = Field(default="standard")
     character_bindings:  str = Field(default="{}")  # JSON
+    world_id: Optional[str] = Field(default=None)
     activation_state: str = Field(default="{}")
     active_children: str = Field(default="{}")
     created_at: str
@@ -41,6 +43,7 @@ class EpisodicInference(SQLModel, table=True):
     source_episode_ids:  str            = Field(default="[]")       # JSON array of memory IDs
     resolution:          Optional[str]  = Field(default=None)       # how it was resolved
     replacement_state:   Optional[str]  = Field(default=None)       # superseding state if applicable
+    world_time_at_update: Optional[int] = Field(default=None)       # world-minutes, if chat has a world
     created_at:          str
     updated_at:          str
 
@@ -81,6 +84,34 @@ class MessageNode(SQLModel, table=True):
     injected_lore: int           = 0
     injected_refs: str           = "{}"
 
+DEFAULT_CALENDAR = {
+    "minutes_per_day":   1440,
+    "days_per_month":    [30] * 12,          # uniform default, override per world
+    "month_names":       [f"Month {i+1}" for i in range(12)],
+    "day_names":         ["Day1","Day2","Day3","Day4","Day5","Day6","Day7"],
+    "epoch_label":       str(datetime.date.today().year),
+    "dawn_offset":       360,   # 06:00
+    "morning_offset":    480,   # 08:00
+    "evening_offset":    1080,  # 18:00
+    "night_offset":      1320,  # 22:00
+}
+
+class World(SQLModel, table=True):
+    id:                     str = Field(primary_key=True)
+    name:                   str
+    blurb:                  str = Field(default="")   # short, shown to user during selection
+    llm_context:            str = Field(default="")   # scene-setting brief, sent to the model
+    preset_id:              Optional[str] = None
+    calendar_config:        str = Field(default=json.dumps(DEFAULT_CALENDAR))
+    current_offset_minutes: int = Field(default=0)
+    created_at:             str
+    updated_at:             str
+
+class WorldCharacterLink(SQLModel, table=True):
+    id:         Optional[int] = Field(default=None, primary_key=True)
+    world_id:   str = Field(index=True)
+    char_id:    str = Field(index=True)   # DuckDB entity id — no FK, cross-store by convention
+
 # ─── Engine ───────────────────────────────────────────────────────────────────
 
 load_dotenv()
@@ -95,6 +126,10 @@ def init_db():
             ("character_bindings", "VARCHAR DEFAULT '{}'"),
             ("activation_state", "VARCHAR DEFAULT '{}'"),
             ("active_children", "VARCHAR DEFAULT '{}'"),
+            ("world_id", "VARCHAR DEFAULT NULL"),
+            ("world_time_at_update", "INTEGER DEFAULT NULL"),
+            ("blurb",       "VARCHAR DEFAULT ''"),
+            ("llm_context", "VARCHAR DEFAULT ''"),
         ]:
             try:
                 conn.execute(text(f"ALTER TABLE chat ADD COLUMN {col} {definition}"))
@@ -149,6 +184,15 @@ def bind_chat_characters(session: Session, chat_id: str, bindings: dict) -> bool
     chat.character_bindings = json.dumps(bindings)
     if bindings.get("chat_type"):
         chat.chat_type = bindings["chat_type"]
+    session.add(chat)
+    session.commit()
+    return True
+
+def set_chat_world(session: Session, chat_id: str, world_id: Optional[str]) -> bool:
+    chat = session.get(Chat, chat_id)
+    if not chat:
+        return False
+    chat.world_id = world_id
     session.add(chat)
     session.commit()
     return True

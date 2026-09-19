@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { graphAPI } from "../lib/api";
+import { Globe2 } from "lucide-react";
 
 const RELATIONSHIP_TYPES = [
   "friend of", "parent of", "child of", "step-parent of", "step-child of", "teaches", "knows", "commands", "betrayed", "allies with", "rivals", "spouse of",
@@ -61,7 +62,7 @@ export default function CharacterTab({
   setUserCharId,
   entities,
   setEntities,
-  inputStyle, charactersLoading, onStartGroupChat
+  inputStyle, charactersLoading, onStartGroupChat, onOpenWorlds
 }) {
   const [view,          setView]          = useState("list"); // "list" | "edit" | "edges"
   const [draft,         setDraft]         = useState(EMPTY_DRAFT);
@@ -270,6 +271,9 @@ export default function CharacterTab({
             <div style={{ display: "flex", gap: 6 }}>
               {onStartGroupChat && (
                 <button onClick={onStartGroupChat} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "5px 10px" }}>⬡ Group chat</button>
+              )}
+              {onOpenWorlds && (
+                <button onClick={onOpenWorlds} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "5px 10px" }}><Globe2 size={12}/> Worlds</button>
               )}
               <button onClick={openNew} style={{ ...inputStyle, cursor: "pointer", fontSize: 12, padding: "5px 10px" }}>+ New character</button>
             </div>

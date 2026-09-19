@@ -18,6 +18,7 @@ export const chatsAPI = {
   getAll:  ()                                    => request("GET",    "/chats/"),
   create:  (id, title, created_at, updated_at)   => request("POST",   "/chats/",        { id, title, created_at, updated_at }),
   update:  (id, title, updated_at)               => request("PATCH",  `/chats/${id}`,   { title, updated_at }),
+  setWorld: (chat_id, world_id)                  => request("PATCH", `/chats/${chat_id}/world`, { world_id }),
   bindCharacters: (id, body)                     => request("PATCH", `/chats/${id}/bind`, body),
   delete:  (id)                                  => request("DELETE", `/chats/${id}`),
 };
@@ -144,4 +145,15 @@ export const eventsAPI = {
     };
     return es; // caller holds reference and calls es.close() on unmount
   },
+};
+
+// ─── Worlds ─────────────────────────────────────────────────────────────────
+export const worldsAPI = {
+  create:            (body)                    => request("POST",   "/worlds/",               body),
+  getAll:            (preset_id)                => request("GET",    `/worlds/?${preset_id ? `preset_id=${preset_id}` : ""}`),
+  get:               (id)                       => request("GET",    `/worlds/${id}`),
+  advance:           (id, text)                 => request("POST",   `/worlds/${id}/advance`,  { text }),
+  linkCharacter:     (worldId, charId)          => request("POST",   `/worlds/${worldId}/characters/${charId}`),
+  unlinkCharacter:   (worldId, charId)          => request("DELETE", `/worlds/${worldId}/characters/${charId}`),
+  getCharacters:     (worldId)                  => request("GET",    `/worlds/${worldId}/characters`),
 };

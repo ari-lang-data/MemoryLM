@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI, episodicAPI, eventsAPI } from "./lib/api";
+import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI, episodicAPI, eventsAPI, worldsAPI } from "./lib/api";
 
 import useEmbedder from "./hooks/useEmbedder";
 import { useEventQueue } from "./hooks/useEventQueue";
@@ -46,6 +46,8 @@ import {Card,CardTitle,Row} from "./components/ui/shared";
   import CharacterTab from "./components/CharacterTab";
   import GraphPanel from "./components/GraphPanel";
   import GroupChatSetupModal from "./components/GroupChatSetupModal";
+  import WorldCreatorModal from "./components/WorldCreatorModal";
+  import WorldSelectorModal from "./components/WorldSelectorModal";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -68,8 +70,10 @@ export default function App() {
   const [memoryLog,      setMemoryLog]      = useState([]);
   const [presets,        setPresets]        = useState(DEFAULT_PRESETS);
   const [activePreset,   setActivePreset]   = useState(null);
-  const [editingPreset,  setEditingPreset]  = useState(null);
-  const [presetDraft,    setPresetDraft]    = useState(null);
+  const [worldSelectorOpen, setWorldSelectorOpen] = useState(false);
+  const [worldsModalOpen, setWorldsModalOpen] = useState(false);
+  const [worldsCache, setWorldsCache] = useState({});
+  const [pendingChatCreation, setPendingChatCreation] = useState(false);
   const [lmStudioUrl,    setLmStudioUrl]    = useState(DEFAULT_LM_STUDIO_URL);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [entities,      setEntities]      = useState([]);
@@ -78,6 +82,7 @@ export default function App() {
   const [templateVars,  setTemplateVars]  = useState([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeCharId,  setActiveCharId]  = useState(null);
+  const [worldTimeCache, setWorldTimeCache] = useState({});
   const [userCharId,    setUserCharId]    = useState(null);
   const [groupChatMembers,    setGroupChatMembers]    = useState([]);
   const [groupSetupOpen,      setGroupSetupOpen]      = useState(false);
@@ -228,6 +233,7 @@ export default function App() {
             if (bindings.chat_type === "group" && bindings.members?.length) {
               setGroupChatMembers(bindings.members);
             }
+            ensureWorldCached(activeChatResolved.world_id)
           }
         }
 
@@ -241,6 +247,13 @@ export default function App() {
   function persistConfig(cfg, sysprompt, url) {
     saveStorage(STORAGE_KEYS.config, { config: cfg, systemPrompt: sysprompt, lmStudioUrl: url });
   }
+
+  async function ensureWorldCached(worldId) {
+    if (!worldId || worldsCache[worldId]) return;
+    const w = await worldsAPI.get(worldId).catch(() => null);
+    if (w) setWorldsCache(prev => ({ ...prev, [worldId]: w }));
+  }
+
   // ── Entities ────────────────────────────────────────────────────────────────
   async function extractEntities() {
     if (extracting || messages.length === 0) return;
@@ -377,6 +390,14 @@ export default function App() {
     });
   }
 
+  function handleNewChatClick() {
+    if (config?.style === "roleplay" && activeCharId) {
+      setWorldSelectorOpen(true);
+    } else {
+      createNewChat();
+    }
+  }
+
   async function createNewChat() {
     nodesChatRef.current = null; // invalidate
     setNodes([]);
@@ -419,6 +440,7 @@ export default function App() {
       setGroupChatMembers([]);
     }
     setActiveChatId(id);
+    ensureWorldCached(chat.world_id)
     saveStorage(STORAGE_KEYS.activeChat, id);
     const savedMsgs = await messagesAPI.get(id);
     setNodes(savedMsgs?.nodes ?? []);
@@ -476,6 +498,18 @@ export default function App() {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
   }
 
+  async function onWorldSelected(worldId) {
+    setWorldSelectorOpen(false);
+    await createNewChat();
+    await chatsAPI.setWorld(activeChatIdRef.current, worldId);
+    setChats(prev => prev.map(c => c.id === activeChatIdRef.current ? { ...c, world_id: worldId } : c));
+  }
+
+  async function onWorldSkipped() {
+    setWorldSelectorOpen(false);
+    await createNewChat();
+  }
+
   //――― Migration ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
   async function migrateMessagesFromLocalStorage() {
     const keysToMigrate = Object.keys(localStorage)
@@ -529,6 +563,9 @@ export default function App() {
         timestamp:        new Date().toISOString(),
         regenerated:      false,
       });
+      world_time: ({ world_id, offset_minutes, formatted_time }) => {
+        setWorldTimeCache(prev => ({ ...prev, [world_id]: { offset_minutes, formatted_time } }));
+      },
       setActiveChild(parentId, node_id)
     },
 
@@ -735,6 +772,14 @@ export default function App() {
     const userChar   = characters.find(c => c.id === userCharId) ?? null;
     const resolved   = resolveTemplate(systemPrompt, activeChar, userChar);
 
+    const activeChat = chats.find(c => c.id === activeChatIdRef.current);
+    if (activeChat?.world_id) {
+      const world = worldsCache[activeChat.world_id];
+      if (world?.llm_context) injected += `\n\n[WORLD SETTING]\n${world.llm_context}`;
+      const wt = worldTimeCache[activeChat.world_id];
+      if (wt) injected += `\n\n[WORLD TIME]\n${wt.formatted_time}`;
+    }
+
     const profile = getRetrievalProfile(
       { content },
       cfg.style ?? "none",
@@ -889,6 +934,11 @@ export default function App() {
         inferences: (activeInferences ?? []).map(i => ({ id: i.id, confidence: i.confidence })),
       },
     });
+
+    const activeChat = chats.find(c => c.id === activeChatId);
+    if (activeChat?.world_id && reply) {
+      worldsAPI.advance(activeChat.world_id, reply).catch(console.error);
+    }
 
     const finalNodes = [...nodes, placeholder];
 
@@ -1119,6 +1169,7 @@ export default function App() {
 
   function editMessage(id, newContent) {
     updateNode(id, n => ({ ...n, content: newContent }));
+    persistNode(id, { content: newContent });
   }
 
   function switchBranch(parentId, direction) {
@@ -1389,7 +1440,7 @@ export default function App() {
         chats={chats}
         activeChatId={activeChatId}
         onSelectChat={switchChat}
-        onNewChat={() => { createNewChat(); setSidebarOpen(false); }}
+        onNewChat={() => { handleNewChatClick(); setSidebarOpen(false); }}
         onDeleteChat={deleteChat}
         onRenameChat={renameChat}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -1398,7 +1449,7 @@ export default function App() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)", flexShrink: 0 }}>
         <button
           onClick={() => setSidebarOpen(o => !o)}
-          style={{ fontFamily: "Playfair Display",fontWeight: 650, fontSize: 17, letterSpacing: "-0.3px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-primary)", padding: 0 }}
+          style={{ fontFamily: "Playfair Display",fontWeight: 650, fontSize: 17, letterSpacing: "-0.3px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-app-name)", padding: 0 }}
         >
           MemoryLM
         </button>
@@ -1526,6 +1577,7 @@ export default function App() {
             inputStyle={inputStyle}
             charactersLoading={charactersLoading}
             onStartGroupChat={config?.style === "roleplay" ? () => setGroupSetupOpen(true) : undefined}
+            onOpenWorlds={() => setWorldsModalOpen(true)}
           />
         )}
 
@@ -1537,7 +1589,9 @@ export default function App() {
             config={config}
             addManualMemory={addManualMemory}
             deleteMemory={deleteMemory} 
-            toggleMemoryPin={toggleMemoryPin}       
+            toggleMemoryPin={toggleMemoryPin} 
+            activeWorld={activeChat?.world_id ? worldsCache[activeChat.world_id] : null}
+            worldTime={activeChat?.world_id ? worldTimeCache[activeChat.world_id]?.formatted_time : null}      
           />
         )}
 
@@ -1623,6 +1677,21 @@ export default function App() {
       )}
       {ConfirmModalRenderer()}
       {shortcutsOpen && <KeyboardShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+
+      {worldSelectorOpen && (
+        <WorldSelectorModal
+          activePresetId={activePreset}
+          activeCharId={activeCharId}
+          onSelect={onWorldSelected}
+          onSkip={onWorldSkipped}
+        />
+      )}
+
+      {worldsModalOpen && (
+        <WorldCreatorModal  
+        activePresetId={activePreset}
+        characters={characters}
+        onClose={() => setWorldsModalOpen(false)} />)}
     </div>
   );
 }

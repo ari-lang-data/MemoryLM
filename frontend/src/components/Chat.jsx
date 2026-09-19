@@ -51,6 +51,8 @@ export default function Chat({chats,
           const lastMsg         = messages[messages.length - 1];
           const lastFinishReason = lastMsg?.role === "assistant" ? lastMsg.finishReason : null;
           const style           = config.style ?? "none";
+          const normalParagraphMargin = "0 0 8px";
+          const rpParagraphMargin = "0 0 16px";
 
           const showContinuation =
             messages.length > 0 && (
@@ -169,7 +171,7 @@ export default function Chat({chats,
                         </div>
                       ) : (
                         <div style={{ maxWidth: 680, display: "flex", flexDirection: "column", gap: 3, alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
-                          <div style={{ padding: "10px 14px", borderRadius: "var(--border-radius-lg)", background: m.role === "user" ? "var(--color-bubble-user)" : "var(--color-bubble-model)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 14, lineHeight: 1.65, color: m.role === "user" ? "var(--color-bubble-user-text)" : "var(--color-text-primary)" }}>
+                          <div style={{ padding: "10px 14px", borderRadius: "var(--border-radius-lg)", background: m.role === "user" ? "var(--color-bubble-user)" : "var(--color-bubble-model)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 14, lineHeight: 1.65, color: m.role === "user" ? "var(--color-bubble-user-text)" : "var(--color-text-primary)", fontFamily: config?.style == "roleplay" ? "var(--font-serif)" : "var(--font-sans)" }}>
                             <ReactMarkdown
                               remarkPlugins={[remarkMath]}
                               rehypePlugins={[rehypeKatex]}
@@ -186,7 +188,7 @@ export default function Chat({chats,
                                     </code>
                                   );
                                 },
-                                p({ children }) { return <p style={{ margin: "0 0 8px" }}>{children}</p>; },
+                                p({ children }) { return <p style={{ margin: config?.style == "roleplay" ? rpParagraphMargin : normalParagraphMargin }}>{children}</p>; },
                                 ul({ children }) { return <ul style={{ margin: "0 0 8px", paddingLeft: 20 }}>{children}</ul>; },
                                 ol({ children }) { return <ol style={{ margin: "0 0 8px", paddingLeft: 20 }}>{children}</ol>; },
                                 li({ children }) { return <li style={{ marginBottom: 4 }}>{children}</li>; },

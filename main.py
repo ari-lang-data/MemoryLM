@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import os
 from routers import memories, lorebook, chats, presets, messages, clusters, graph, episodic
 from database.graph import init_graph, switch_to_sqlite
-from routers import events
+from routers import events, worlds
 from database.queue_processor import ensure_processor
 from database.queue import enqueue as queue_enqueue
 from database.migrate_messages import migrate_json_messages_to_sqlite
@@ -19,6 +19,7 @@ app.include_router(messages.router,  prefix="/messages",  tags=["messages"])
 app.include_router(clusters.router,  prefix="/clusters",  tags=["clusters"])
 app.include_router(graph.router,     prefix="/graph",     tags=["graph"])
 app.include_router(episodic.router,  prefix="/episodic",  tags=["episodic"])
+app.include_router(worlds.router, prefix="/worlds",       tags=["worlds"])
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(

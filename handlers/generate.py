@@ -90,6 +90,10 @@ async def handle_generate(item: QueueItem):
         })
         return
 
+    from database.queue import append_round_text
+    # after the streaming loop finishes:
+    append_round_text(chat_id, accumulated)
+
     # ── Discharge activation ─────────────────────────────────────────────────
     if char_id:
         discharge(chat_id, char_id)

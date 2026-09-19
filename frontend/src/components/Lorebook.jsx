@@ -1,11 +1,11 @@
 import{inputStyle, STORAGE_KEYS} from "../lib/constants";
 import {saveStorage} from "../lib/storage";
 import {Card} from "./ui/shared";
-import { Link, Pin, PinOff, X } from "lucide-react";
+import { Link, Pin, PinOff, X, Pencil } from "lucide-react";
 export default function Lorebook({lorebook,lorebookDraft,editingLore, setEditingLore, TYPE_COLORS,LORE_TYPES, setLorebookDraft, addLorebookEntry, deleteLorebookEntry, toggleLorePin,onOpenEdges, loreEdgePanel, setLoreEdgePanel, entities, graphAPI}){
     return(
-        <div style={{ flex: 1, display: "flex", overflow: "hidden", width: "100%", margin: "0 auto", maxWidth: 800 }}>
-            <div style={{ flex: 1, overflowY: "auto", padding: 16, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ flex: 1, display: "flex", overflow: "hidden", width: "100%", maxWidth: 800  }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: 16, borderRight: "0.5px solid var(--color-border-tertiary)", display: "flex", flexDirection: "column", gap: 10, margin: "0 auto" }}>
               {lorebook.length === 0
                 ? <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 13, padding: 32 }}>No lorebook entries yet. Add characters, locations, factions, world rules…</div>
                 : lorebook.slice().reverse().map(e => (
@@ -20,7 +20,7 @@ export default function Lorebook({lorebook,lorebookDraft,editingLore, setEditing
                         {e.tags && <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>Tags: {e.tags}</p>}
                       </div>
                       <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                        <button onClick={() => { setEditingLore(e.id); setLorebookDraft({ title: e.title, tags: e.tags ?? "", content: e.content, type: e.type ?? "character" }); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14 }}>✎</button>
+                        <button onClick={() => { setEditingLore(e.id); setLorebookDraft({ title: e.title, tags: e.tags ?? "", content: e.content, type: e.type ?? "character" }); }} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14 }}><Pencil size={14}/></button>
                         <button
                           onClick={() => onOpenEdges(e)}
                           style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14 }}

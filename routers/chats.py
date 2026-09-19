@@ -4,6 +4,8 @@ from database.sqlite import get_session, create_chat, get_all_chats, get_chat, u
 from database.chroma import get_memories_collection
 from models.schemas import ChatCreate, ChatUpdate, ChatBindCharacters, SuccessResponse
 from database.sqlite import bind_chat_characters
+from pydantic import BaseModel
+from typing import Optional
 import json
 
 router = APIRouter()
@@ -23,6 +25,7 @@ def get_all(session: Session = Depends(get_session)):
             "created_at":          c.created_at,
             "updated_at":          c.updated_at,
             "chat_type":           c.chat_type,
+            "world_id":            c.world_id,
             "character_bindings":  json.loads(c.character_bindings or "{}"),
             "activation_state":    c.activation_state,
         }
@@ -57,5 +60,16 @@ def delete(chat_id: str, session: Session = Depends(get_session)):
         col.delete(ids=existing["ids"])
     result = delete_chat(session, chat_id)
     if not result:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return SuccessResponse()
+
+from database.sqlite import set_chat_world
+
+class ChatWorldUpdate(BaseModel):
+    world_id: Optional[str] = None
+
+@router.patch("/{chat_id}/world", response_model=SuccessResponse)
+def set_world(chat_id: str, body: ChatWorldUpdate, session: Session = Depends(get_session)):
+    if not set_chat_world(session, chat_id, body.world_id):
         raise HTTPException(status_code=404, detail="Chat not found")
     return SuccessResponse()

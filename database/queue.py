@@ -74,6 +74,15 @@ def get_buffered_events(chat_id: str, since_id: Optional[str] = None) -> list:
         return buf[ids.index(since_id) + 1:]
     return buf
 
+_round_buffers: dict[str, list[str]] = defaultdict(list)
+
+def append_round_text(chat_id: str, text: str):
+    _round_buffers[chat_id].append(text)
+
+def flush_round_text(chat_id: str) -> str:
+    text = " ".join(_round_buffers.pop(chat_id, []))
+    return text
+
 # ── Activation model ──────────────────────────────────────────────────────────
 
 def _decayed(activation: float, last_updated: datetime, tau: float) -> float:

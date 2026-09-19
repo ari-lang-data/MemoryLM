@@ -8,6 +8,10 @@ from database.queue import (
 )
 from database.graph import execute as graph_execute
 from models.events import QueueItem, SpeakerDecision
+from database.queue import flush_round_text
+from database.worldtime import advance_world_time, format_world_time
+from database.sqlite import engine, get_chat, World
+from sqlmodel import Session
 import httpx
 import os
 
@@ -17,8 +21,7 @@ DIRECTOR_MAX_TOK   = 256
 
 def _get_group_members(chat_id: str, preset_id: str) -> list[dict]:
     """Fetch character cards for all group members of this chat."""
-    from database.sqlite import engine
-    from sqlmodel import Session, select, text
+    from sqlmodel import select, text
     with Session(engine) as session:
         result = session.execute(
             text("SELECT character_bindings FROM chat WHERE id = :id"),
@@ -194,12 +197,40 @@ async def handle_evaluate(item: QueueItem, preset_id: str):
     # ── 4. Check threshold ───────────────────────────────────────────────────
     candidates = characters_above_threshold(chat_id)
     if not candidates:
+        round_text = flush_round_text(chat_id)
+        with Session(engine) as session:
+            chat = get_chat(session, chat_id)
+            if chat and chat.world_id and round_text:
+                new_offset = advance_world_time(session, chat.world_id, round_text)
+                world = session.get(World, chat.world_id)
+                push_sse(chat_id, {
+                    "event": "world_time",
+                    "data": {
+                        "chat_id": chat_id, "world_id": chat.world_id,
+                        "offset_minutes": new_offset,
+                        "formatted_time": format_world_time(new_offset, json.loads(world.calendar_config)),
+                    },
+                })
         push_sse(chat_id, {"event": "scene_pause", "data": {"chat_id": chat_id}})
         return
 
     # ── 5. Director LLM ──────────────────────────────────────────────────────
     decisions = await _call_director(candidates, members, content)
     if not decisions:
+        round_text = flush_round_text(chat_id)
+        with Session(engine) as session:
+            chat = get_chat(session, chat_id)
+            if chat and chat.world_id and round_text:
+                new_offset = advance_world_time(session, chat.world_id, round_text)
+                world = session.get(World, chat.world_id)
+                push_sse(chat_id, {
+                    "event": "world_time",
+                    "data": {
+                        "chat_id": chat_id, "world_id": chat.world_id,
+                        "offset_minutes": new_offset,
+                        "formatted_time": format_world_time(new_offset, json.loads(world.calendar_config)),
+                    },
+                })
         push_sse(chat_id, {"event": "scene_pause", "data": {"chat_id": chat_id}})
         return
 
