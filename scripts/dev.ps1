@@ -1,142 +1,59 @@
-#Requires -Version 5.1
-
 $ErrorActionPreference = "Stop"
+$Root = Split-Path -Parent $PSScriptRoot
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$Root = (Resolve-Path (Join-Path $ScriptDir "..")).Path
-
-$Backend = Join-Path $Root "backend"
-$Frontend = Join-Path $Root "frontend"
-
-$BackendPython = Join-Path $Backend ".venv\Scripts\python.exe"
-$BackendEnv = Join-Path $Backend ".env"
-
-$BackendProcess = $null
-$FrontendProcess = $null
-
-# ── Cleanup ────────────────────────────────────────────────────────
-
-function Stop-Processes {
-    Write-Host ""
-    Write-Host "Shutting down..."
-
-    if ($BackendProcess -and -not $BackendProcess.HasExited) {
-        Stop-Process -Id $BackendProcess.Id -Force -ErrorAction SilentlyContinue
+function Import-DotEnv($path) {
+    $vars = @{}
+    if (Test-Path $path) {
+        Get-Content $path | ForEach-Object {
+            if ($_ -match '^\s*#' -or $_ -match '^\s*$') { return }
+            $parts = $_ -split '=', 2
+            if ($parts.Count -eq 2) { $vars[$parts[0].Trim()] = $parts[1].Trim() }
+        }
     }
+    return $vars
+}
 
-    if ($FrontendProcess -and -not $FrontendProcess.HasExited) {
-        Stop-Process -Id $FrontendProcess.Id -Force -ErrorAction SilentlyContinue
-    }
+$envVars = Import-DotEnv "$Root\backend\.env"
+$hostAddr = if ($envVars["TS_HOST"]) { $envVars["TS_HOST"] } else { "127.0.0.1" }
+$port = if ($envVars["PORT"]) { $envVars["PORT"] } else { "8000" }
+
+$backendArgs = @("backend.main:app", "--host", $hostAddr, "--port", $port, "--reload")
+if ($envVars["TS_CERT_KEY"] -and $envVars["TS_CERT_CRT"]) {
+    $backendArgs += @("--ssl-keyfile", $envVars["TS_CERT_KEY"], "--ssl-certfile", $envVars["TS_CERT_CRT"])
+    $scheme = "https"
+} else {
+    $scheme = "http"
+}
+
+$backendProc  = $null
+$frontendProc = $null
+
+function Stop-All {
+    Write-Host "`nShutting down..."
+    if ($backendProc  -and -not $backendProc.HasExited)  { Stop-Process -Id $backendProc.Id  -Force -ErrorAction SilentlyContinue }
+    if ($frontendProc -and -not $frontendProc.HasExited) { Stop-Process -Id $frontendProc.Id -Force -ErrorAction SilentlyContinue }
+}
+
+trap {
+    Stop-All
+    break
 }
 
 try {
-    # ── Backend ────────────────────────────────────────────────────
+    $backendProc = Start-Process -FilePath "$Root\backend\.venv\Scripts\uvicorn.exe" -ArgumentList $backendArgs `
+        -WorkingDirectory "$Root\backend" -NoNewWindow -PassThru
 
-    if (-not (Test-Path $BackendPython)) {
-        throw "Backend virtual environment not found. Run .\scripts\install.ps1 first."
-    }
-
-    if (-not (Test-Path $BackendEnv)) {
-        throw "backend\.env not found. Run .\scripts\install.ps1 first."
-    }
-
-    # Load .env into the current PowerShell process.
-    Get-Content $BackendEnv |
-        Where-Object {
-            $_ -match '^\s*[A-Za-z_][A-Za-z0-9_]*\s*=' -and
-            $_ -notmatch '^\s*#'
-        } |
-        ForEach-Object {
-            $key, $value = $_ -split '=', 2
-            $key = $key.Trim()
-            $value = $value.Trim()
-
-            # Remove matching surrounding quotes.
-            if (
-                ($value.StartsWith('"') -and $value.EndsWith('"')) -or
-                ($value.StartsWith("'") -and $value.EndsWith("'"))
-            ) {
-                $value = $value.Substring(1, $value.Length - 2)
-            }
-
-            [Environment]::SetEnvironmentVariable($key, $value, "Process")
-        }
-
-    $HostAddress = if ($env:TS_HOST) {
-        $env:TS_HOST
-    } else {
-        "127.0.0.1"
-    }
-
-    $Port = if ($env:PORT) {
-        $env:PORT
-    } else {
-        "8000"
-    }
-
-    $UvicornArgs = @(
-        "-m", "uvicorn",
-        "backend.main:app",
-        "--host", $HostAddress,
-        "--port", $Port,
-        "--reload"
-    )
-
-    $UseSSL = (
-        -not [string]::IsNullOrWhiteSpace($env:TS_CERT_KEY) -and
-        -not [string]::IsNullOrWhiteSpace($env:TS_CERT_CRT)
-    )
-
-    if ($UseSSL) {
-        $UvicornArgs += @(
-            "--ssl-keyfile", $env:TS_CERT_KEY,
-            "--ssl-certfile", $env:TS_CERT_CRT
-        )
-    }
-
-    $BackendProtocol = if ($UseSSL) { "https" } else { "http" }
-
-    Write-Host "Starting backend..."
-
-    $BackendProcess = Start-Process `
-        -FilePath $BackendPython `
-        -ArgumentList $UvicornArgs `
-        -WorkingDirectory $Backend `
-        -PassThru
-
-    # ── Frontend ───────────────────────────────────────────────────
-
-    Write-Host "Starting frontend..."
-
-    $FrontendProcess = Start-Process `
-        -FilePath "npm.cmd" `
-        -ArgumentList "run", "dev" `
-        -WorkingDirectory $Frontend `
-        -PassThru
+    $frontendProc = Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "dev") `
+        -WorkingDirectory "$Root\frontend" -NoNewWindow -PassThru
 
     Write-Host ""
-    Write-Host "Backend  (PID $($BackendProcess.Id)) → $BackendProtocol://$HostAddress`:$Port"
-    Write-Host "Frontend (PID $($FrontendProcess.Id)) → see Vite output for the exact URL"
+    Write-Host "Backend  (PID $($backendProc.Id))  -> $scheme`://$hostAddr`:$port"
+    Write-Host "Frontend (PID $($frontendProc.Id)) -> see the Vite output above for the exact URL"
     Write-Host "Ctrl+C to stop both."
     Write-Host ""
 
-    # Keep this script alive while both processes are running.
-    while (
-        -not $BackendProcess.HasExited -and
-        -not $FrontendProcess.HasExited
-    ) {
-        Start-Sleep -Milliseconds 500
-    }
-
-    # If one process exits unexpectedly, stop the other.
-    if ($BackendProcess.HasExited) {
-        Write-Host "Backend process exited."
-    }
-
-    if ($FrontendProcess.HasExited) {
-        Write-Host "Frontend process exited."
-    }
+    Wait-Process -Id $backendProc.Id, $frontendProc.Id
 }
 finally {
-    Stop-Processes
+    Stop-All
 }

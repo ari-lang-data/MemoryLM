@@ -1,6 +1,6 @@
 from fastapi import Request, HTTPException, Depends
 from sqlmodel import Session
-from backend.database.sqlite import get_session, verify_api_token
+from database.sqlite import get_session, verify_api_token
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
