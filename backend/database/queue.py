@@ -4,7 +4,7 @@ import json
 from collections import defaultdict
 from datetime import datetime
 from typing import Optional
-from backend.models.events import QueueItem
+from models.events import QueueItem
 
 # ── Per-chat stores ───────────────────────────────────────────────────────────
 _queues:      dict[str, asyncio.PriorityQueue] = {}

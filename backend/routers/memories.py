@@ -1,34 +1,53 @@
-from fastapi import APIRouter, HTTPException
-from backend.database.chroma import get_memories_collection
-from backend.models.schemas import MemoryAdd, MemoryUpdate, MemoryQuery, SuccessResponse
+from fastapi import APIRouter, HTTPException, Depends
+from database.chroma import get_memories_collection
+from models.schemas import MemoryAdd, MemoryUpdate, MemoryQuery, SuccessResponse
+from database.sqlite import get_session, get_chat, World
+from sqlmodel import Session
+from typing import Optional
 import math
 from datetime import datetime, timezone
 from pydantic import BaseModel
+import os
+from pathlib import Path
+import json
 
 router = APIRouter()
+EXPERIMENT_LOG_DIR = Path("./experiments/logs")
+
+def _world_offset_for_chat(session: Session, chat_id: str) -> Optional[int]:
+    chat = get_chat(session, chat_id)
+    if not chat or not chat.world_id:
+        return None
+    world = session.get(World, chat.world_id)
+    return world.current_offset_minutes if world else None
 
 @router.post("/", response_model=SuccessResponse)
 def add_memory(body: MemoryAdd):
     col = get_memories_collection()
+
+    metadata={
+            "chat_id": body.chat_id,
+            "source":  body.source,
+            "timestamp": body.timestamp,
+            "world_time_at_update": body.world_time_at_update,
+            "turns":   body.turns,
+        }
     col.add(
         ids=[body.id],
         embeddings=[body.embedding],
         documents=[body.summary],
-        metadatas=[{
-            "chat_id": body.chat_id,
-            "source":  body.source,
-            "timestamp": body.timestamp,
-            "turns":   body.turns,
-        }]
+        metadatas=[metadata]
     )
     return SuccessResponse()
 
 @router.post("/query")
-def query_memories(body: MemoryQuery):
+def query_memories(body: MemoryQuery, session: Session=Depends(get_session)):
     col   = get_memories_collection()
     count = col.count()
     if count == 0:
         return []
+
+    current_world_offset = _world_offset_for_chat(session, body.chat_id)
 
     results = col.query(
         query_embeddings=[body.embedding],
@@ -42,37 +61,48 @@ def query_memories(body: MemoryQuery):
     metadatas = (results["metadatas"] or [])[0]
     distances = (results["distances"] or [])[0]
 
-    hits = []
+    hits, all_candidates = [], []
     for id, doc, meta, dist in zip(ids, documents, metadatas, distances):
         similarity = max(0.0, min(1.0, 1 - dist))
-        if similarity < body.threshold:
-            continue
-        recency = recency_score(str(meta.get("timestamp", "")), body.decay_rate)
+        recency    = recency_score(str(meta.get("timestamp", "")), int(meta.get("world_time_at_update", "0")), current_world_offset, body.decay_rate)
         importance = importance_score(meta)
         score = (
             body.alpha             * similarity  +
             ((1 - body.alpha) / 2) * recency     +
             ((1 - body.alpha) / 2) * importance
         )
-        hits.append({
-            "id":         id,
-            "summary":    doc,
-            "score":      round(score, 4),
-            "similarity": round(similarity, 4),
-            "recency":    round(recency, 4),
-            "importance": round(importance, 4),
-            **meta
+        passed = similarity >= body.threshold
+        all_candidates.append({
+            "id": id, "score": round(score, 4), "similarity": round(similarity, 4),
+            "recency": round(recency, 4), "importance": round(importance, 4),
+            "passed_threshold": passed,
         })
+        if passed:
+            hits.append({"id": id, "summary": doc, "score": round(score, 4),
+                          "similarity": round(similarity, 4), "recency": round(recency, 4),
+                          "importance": round(importance, 4), **meta})
 
-    # Re-sort by combined score since ChromaDB sorted by similarity only
     hits.sort(key=lambda x: x["score"], reverse=True)
+
+    # ── Experiment logging — no-op unless explicitly enabled and query_text supplied ──
+    if os.getenv("MLM_EXPERIMENT_LOG") and body.query_text:
+        EXPERIMENT_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(EXPERIMENT_LOG_DIR / f"{body.chat_id}.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "timestamp":  datetime.now(timezone.utc).isoformat(),
+                "chat_id":    body.chat_id,
+                "query_text": body.query_text,
+                "threshold":  body.threshold,
+                "candidates": all_candidates,
+            }) + "\n")
+
     return hits
 
-def recency_score(timestamp: str, decay_rate: float = 0.01) -> float:
+def recency_score(timestamp: str, world_time_at_update: int, current_world_offset: Optional[int], decay_rate: float = 0.01) -> float:
     try:
-        ts  = datetime.fromisoformat(timestamp).replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        age_hours = (now - ts).total_seconds() / 3600
+        ts  = datetime.fromisoformat(timestamp).replace(tzinfo=timezone.utc) if (world_time_at_update is None and current_world_offset is None) else world_time_at_update
+        now = datetime.now(timezone.utc) if (world_time_at_update is None and current_world_offset is None) else current_world_offset
+        age_hours = (current_world_offset-world_time_at_update)/60 if (current_world_offset is not None and world_time_at_update is not None) else (now - ts).total_seconds() / 3600
         return math.exp(-decay_rate * age_hours)
     except Exception:
         return 1.0  # if timestamp is malformed, don't penalise
@@ -128,6 +158,7 @@ def update_memory(memory_id: str, body: MemoryUpdate):
         metadatas=[{
             **(existing["metadatas"] or [])[0],
             "timestamp": body.timestamp,
+            "world_time_at_update": body.world_time_at_update,
         }]
     )
     return SuccessResponse()

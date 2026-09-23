@@ -4,7 +4,11 @@ import { Card, CardTitle, Row } from "./ui/shared";
 import { saveStorage } from "../lib/storage";
 import { messagesAPI, memoriesAPI } from "../lib/api";
 import { modalBackdropValues } from "../lib/fermiDirac";
-import { ChevronRight } from "lucide-react";
+import { getRimMode, setRimMode } from "../lib/glassRim";
+import { useIsMobile } from "../hooks/useIsMobile";
+import { authAPI, getApiToken, setApiToken } from "../lib/api";
+import { ChevronRight, X, Plus } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 
 const FIXED_PRESET_IDS = ["assistant", "coding", "creative", "roleplay"];
 
@@ -27,6 +31,22 @@ const { opacity: backdropOpacity, blur: backdropBlur } = modalBackdropValues();
 
 // ── Slider row ────────────────────────────────────────────────────────────────
 function SliderRow({ label, value, min, max, step, onChange }) {
+  const isMobile = useIsMobile();
+
+  if (isMobile) {
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</label>
+          <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 8px", borderRadius: 6, background: "var(--color-background-secondary)" }}>
+            {value ?? min}
+          </span>
+        </div>
+        <input type="range" min={min} max={max} step={step} value={value ?? min} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: "100%" }} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "180px 1fr 55px", alignItems: "center", gap: 12, marginBottom: 16 }}>
       <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</label>
@@ -39,7 +59,7 @@ function SliderRow({ label, value, min, max, step, onChange }) {
 }
 
 // ── Presets pane ──────────────────────────────────────────────────────────────
-function PresetsPane({ presets, activePreset, applyPreset, updatePresetConfig, updatePresetPrompt }) {
+function PresetsPane({ presets, activePreset, applyPreset, updatePresetConfig, updatePresetPrompt, isMobile }) {
   const [selectedId,    setSelectedId]    = useState(activePreset ?? "assistant");
   const [advancedOpen,  setAdvancedOpen]  = useState(false);
 
@@ -50,9 +70,19 @@ function PresetsPane({ presets, activePreset, applyPreset, updatePresetConfig, u
   const advancedParams = parameterDefs.filter(p => !BASIC_PARAM_KEYS.has(p.key));
 
   return (
-    <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
-      {/* Preset selector */}
-      <div style={{ width: 160, flexShrink: 0, borderRight: "0.5px solid var(--color-border-tertiary)", padding: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", flex: 1, overflow: "hidden", minHeight: 0 }}>
+      {/* Preset selector — sidebar on desktop, scrolling chip strip on mobile */}
+      <div style={{
+        width: isMobile ? "100%" : 160,
+        flexShrink: 0,
+        borderRight: isMobile ? "none" : "0.5px solid var(--color-border-tertiary)",
+        borderBottom: isMobile ? "0.5px solid var(--color-border-tertiary)" : "none",
+        padding: isMobile ? "10px 12px" : 12,
+        display: "flex",
+        flexDirection: isMobile ? "row" : "column",
+        gap: isMobile ? 8 : 4,
+        overflowX: isMobile ? "auto" : "visible",
+      }}>
         {FIXED_PRESET_IDS.map(id => {
           const preset     = presets.find(p => p.id === id);
           if (!preset) return null;
@@ -62,10 +92,19 @@ function PresetsPane({ presets, activePreset, applyPreset, updatePresetConfig, u
             <button
               key={id}
               onClick={() => setSelectedId(id)}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: isSelected ? "var(--color-background-tertiary)" : "transparent", border: "none", cursor: "pointer", textAlign: "left", color: "var(--color-text-primary)" }}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: isMobile ? "8px 12px" : "10px 12px",
+                borderRadius: 8,
+                background: isSelected ? "var(--color-background-tertiary)" : "transparent",
+                border: "none", cursor: "pointer", textAlign: "left",
+                color: "var(--color-text-primary)",
+                flexShrink: isMobile ? 0 : undefined,
+                whiteSpace: isMobile ? "nowrap" : "normal",
+              }}
             >
               <span style={{ fontSize: 16 }}>{preset.icon}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: isMobile ? "0 0 auto" : 1 }}>
                 <p style={{ margin: 0, fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: isSelected ? 600 : 400 }}>{preset.name}</p>
                 {isActive && <p style={{ margin: 0, fontSize: 10, color: "var(--color-text-info)" }}>active</p>}
               </div>
@@ -205,6 +244,17 @@ export default function SettingsModal({
   const [activeTab,    setActiveTab]    = useState("presets");
   const [settingsTab,  setSettingsTab]  = useState("connection");
   const [powerUserPending, setPowerUserPending] = useState(false);
+  const [rimMode, setRimModeState] = useState(() => getRimMode());
+
+  const [tokens, setTokens] = useState([]);
+const [newLabel, setNewLabel] = useState("");
+const [justCreated, setJustCreated] = useState(null); // raw token, shown once
+const [pastedToken, setPastedToken] = useState(() => getApiToken());
+
+useEffect(() => {
+  if (!isOpen) return;
+  authAPI.getTokens().then(setTokens).catch(() => setTokens([])); // fails harmlessly on a device with no admin access — expected on the phone
+}, [isOpen]);
 
   const SETTINGS_TABS = [
     { id: "connection", label: "Connection" },
@@ -224,6 +274,33 @@ export default function SettingsModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [isOpen, onClose]);
 
+  const isMobile = useIsMobile();
+
+  async function handleSaveToken() {
+    const trimmed = pastedToken.trim();
+    setApiToken(trimmed);
+    const ok = await checkAuth();
+    if (ok) {
+      window.location.reload();
+    } else {
+      setApiToken("");
+      alert("Token rejected — double check it was copied correctly.");
+    }
+  }
+
+  async function handleCreateToken() {
+  if (!newLabel.trim()) return;
+  const { token } = await authAPI.createToken(newLabel.trim());
+  setJustCreated(token);
+  setNewLabel("");
+  authAPI.getTokens().then(setTokens);
+}
+
+async function handleRevoke(id) {
+  await authAPI.revokeToken(id);
+  authAPI.getTokens().then(setTokens);
+}
+
   // Close on backdrop click
   function handleBackdropClick(e) {
     if (modalRef.current && !modalRef.current.contains(e.target)) onClose();
@@ -235,6 +312,11 @@ export default function SettingsModal({
     { id: "presets",   label: "Presets"   },
     { id: "settings",  label: "Settings"  },
   ];
+
+  function handleSetRimMode(mode) {
+    setRimMode(mode);
+    setRimModeState(mode);
+  }
 
   return (
     /* Backdrop */
@@ -256,20 +338,22 @@ export default function SettingsModal({
       <div
         ref={modalRef}
         style={{
-          width:           "min(820px, 92vw)",
-          height:          "min(640px, 88vh)",
+          width:           isMobile ? "100vw" : "min(820px, 92vw)",
+          height:          isMobile ? "100dvh" : "min(640px, 88vh)",
           background:      "var(--color-background-primary)",
-          border:          "0.5px solid var(--color-border-secondary)",
-          borderRadius:    "var(--border-radius-lg)",
-          boxShadow:       "0 24px 64px rgba(0,0,0,0.6)",
+          border:          isMobile ? "none" : "0.5px solid var(--color-border-secondary)",
+          borderRadius:    isMobile ? 0 : "var(--border-radius-lg)",
+          boxShadow:       isMobile ? "none" : "0 24px 64px rgba(0,0,0,0.6)",
           display:         "flex",
           flexDirection:   "column",
           overflow:        "hidden",
         }}
       >
         {/* Modal header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "0.5px solid var(--color-border-tertiary)", flexShrink: 0 }}>
-          <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", 
+          padding: isMobile ? "calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px" : "12px 16px", 
+          borderBottom: "0.5px solid var(--color-border-tertiary)", flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 4, overflowX: "auto" }}>
             {TOP_TABS.map(t => (
               <button
                 key={t.id}
@@ -282,9 +366,9 @@ export default function SettingsModal({
           </div>
           <button
             onClick={onClose}
-            style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 18, lineHeight: 1, padding: "2px 6px" }}
+            style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: isMobile ? 22 : 18, lineHeight: 1, padding: isMobile ? "6px 10px" : "2px 6px" }}
             title="Close"
-          >×</button>
+          ><X size={22}/></button>
         </div>
 
         {/* Modal body */}
@@ -298,6 +382,7 @@ export default function SettingsModal({
               applyPreset={applyPreset}
               updatePresetConfig={updatePresetConfig}
               updatePresetPrompt={updatePresetPrompt}
+              isMobile={isMobile}
             />
           )}
 
@@ -329,6 +414,70 @@ export default function SettingsModal({
                       <Row label={<>Model name <span style={{ fontSize: 11, opacity: 0.6 }}>(optional)</span></>}>
                         <input value={config.modelName} onChange={e => { const n = { ...config, modelName: e.target.value }; setConfig(n); persistConfig(n, systemPrompt, lmStudioUrl); }} placeholder="Leave blank to use loaded model" style={{ ...inputStyle, flex: 1 }} />
                       </Row>
+                    </div>
+                  </Card>
+                  <Card>
+                    <CardTitle>Devices</CardTitle>
+
+                    {/* Only meaningful when this Settings panel is open on the laptop itself
+                        — a phone hitting authAPI.getTokens() gets a 401 and just sees an
+                        empty list, since minting/listing tokens is itself loopback-gated. */}
+                    {tokens.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+                        {tokens.map(t => (
+                          <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, padding: "4px 0" }}>
+                            <span style={{ color: "var(--color-text-secondary)" }}>{t.label}</span>
+                            <button onClick={() => handleRevoke(t.id)} style={{ background: "transparent", border: "none", color: "var(--color-text-danger)", cursor: "pointer", fontSize: 12 }}>Revoke</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input
+                        value={newLabel}
+                        onChange={e => setNewLabel(e.target.value)}
+                        placeholder="e.g. Colin's phone"
+                        style={{ ...inputStyle, flex: 1 }}
+                      />
+                      <button onClick={handleCreateToken} style={{ padding: "6px 12px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)", fontSize: 12, cursor: "pointer", alignItems: "center", gap: 6 }}>
+                        <Plus size={12}/> New device
+                      </button>
+                    </div>
+
+                    {justCreated && (
+                      <div style={{ marginTop: 10, padding: 10, borderRadius: "var(--border-radius-md)", background: "var(--color-background-tertiary)", border: "0.5px solid var(--color-border-primary)" }}>
+                        <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", margin: "0 0 4px" }}>
+                          Shown once — copy it onto the device now.
+                        </p>
+                        <div style={{ background: "#ffffff", padding: 10, borderRadius: "var(--border-radius-md)" }}>
+                          <QRCodeSVG value={justCreated} size={160} />
+                        </div>
+                        <code style={{ fontSize: 11, wordBreak: "break-all", color: "var(--color-text-primary)" }}>{justCreated}</code>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(justCreated); setJustCreated(null); }}
+                          style={{ display: "block", marginTop: 6, fontSize: 11, background: "transparent", border: "none", color: "var(--color-text-info)", cursor: "pointer", padding: 0 }}
+                        >
+                          Copy & dismiss
+                        </button>
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                      <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", margin: "0 0 6px" }}>
+                        On a device other than this computer, paste the token you were given:
+                      </p>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input
+                          value={pastedToken}
+                          onChange={e => setPastedToken(e.target.value)}
+                          placeholder="Paste device token"
+                          style={{ ...inputStyle, flex: 1 }}
+                        />
+                        <button onClick={handleSaveToken} style={{ padding: "6px 12px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-tertiary)", color: "var(--color-text-primary)", fontSize: 12, cursor: "pointer" }}>
+                          Save
+                        </button>
+                      </div>
                     </div>
                   </Card>
                   <Card>
@@ -373,6 +522,33 @@ export default function SettingsModal({
                       ))}
                     </div>
                   </Card>
+                  <Card>
+                    <CardTitle>Chat bubble rim</CardTitle>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {[
+                        { id: "auto",  label: "Auto"    },
+                        { id: "webgl", label: "Crystal" },
+                        { id: "svg",   label: "Flat"    },
+                      ].map(opt => (
+                        <button
+                          key={opt.id}
+                          onClick={() => handleSetRimMode(opt.id)}
+                          style={{
+                            flex: 1, padding: "6px 0", borderRadius: "var(--border-radius-md)",
+                            border: rimMode === opt.id ? "0.5px solid var(--color-border-primary)" : "0.5px solid var(--color-border-tertiary)",
+                            background: rimMode === opt.id ? "var(--color-background-secondary)" : "transparent",
+                            color: rimMode === opt.id ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                            fontSize: 12, cursor: "pointer", fontWeight: rimMode === opt.id ? 500 : 400,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                      <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                        Auto picks based on your GPU. Crystal is the real Fresnel/Snell WebGL render; Flat is the cheaper SVG-filter approximation for CPU/iGPU systems.
+                      </p>
+                    </Card>
                   <Card>
                     <CardTitle>Mode</CardTitle>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>

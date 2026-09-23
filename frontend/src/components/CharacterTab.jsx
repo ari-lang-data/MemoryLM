@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { graphAPI } from "../lib/api";
-import { Globe2 } from "lucide-react";
+import { Globe2, X } from "lucide-react";
 
 const RELATIONSHIP_TYPES = [
   "friend of", "parent of", "child of", "step-parent of", "step-child of", "teaches", "knows", "commands", "betrayed", "allies with", "rivals", "spouse of",
@@ -61,7 +61,7 @@ export default function CharacterTab({
   userCharId,
   setUserCharId,
   entities,
-  setEntities,
+  setEntities, confirm,
   inputStyle, charactersLoading, onStartGroupChat, onOpenWorlds
 }) {
   const [view,          setView]          = useState("list"); // "list" | "edit" | "edges"
@@ -354,7 +354,7 @@ export default function CharacterTab({
                         <div style={{ display: "flex", gap: 5 }}>
                             <button onClick={() => openEdges(char)} style={{ ...inputStyle, cursor: "pointer", fontSize: 11, padding: "3px 0", flex: 1, textAlign: "center" }}>Links</button>
                             <button onClick={() => openEdit(char)}  style={{ ...inputStyle, cursor: "pointer", fontSize: 11, padding: "3px 0", flex: 1, textAlign: "center" }}>Edit</button>
-                            <button onClick={() => deleteCharacter(char.id)} style={{ ...inputStyle, cursor: "pointer", fontSize: 11, padding: "3px 0", flex: 1, textAlign: "center", color: "var(--color-text-danger)", borderColor: "var(--color-border-danger)" }}>×</button>
+                            <button onClick={ async () => { if (await confirm("Delete thhis Character?")) deleteCharacter(char.id)}} style={{ ...inputStyle, cursor: "pointer", fontSize: 11, padding: "3px 0", flex: 1, alignItems: "center", color: "var(--color-text-danger)", borderColor: "var(--color-border-danger)" }}><X size={11}/></button>
                         </div>
                         </div>
                     </div>

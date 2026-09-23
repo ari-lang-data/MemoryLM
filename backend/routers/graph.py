@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from backend.database.graph import execute, executemany
-from backend.models.schemas import SuccessResponse, CharacterCardUpdate
+from database.graph import execute, executemany
+from models.schemas import SuccessResponse, CharacterCardUpdate
 from datetime import datetime, timezone
 import json
 import uuid
@@ -256,3 +256,12 @@ def traverse(entity_id: str, depth: int = 1, relationship: Optional[str] = None)
 
     walk(entity_id, 1)
     return result
+
+@router.get("/stats")
+def get_stats():
+    entity_rows = execute("SELECT COUNT(*) FROM entities")
+    edge_rows = execute("SELECT COUNT(*) FROM edges")
+    return {
+        "entityCount": entity_rows[0][0] if entity_rows else 0,
+        "edgeCount":   edge_rows[0][0] if edge_rows else 0,
+    }

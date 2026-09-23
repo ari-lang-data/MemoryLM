@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
-from backend.database.sqlite import get_session, create_chat, get_all_chats, get_chat, update_chat, delete_chat
-from backend.database.chroma import get_memories_collection
-from backend.models.schemas import ChatCreate, ChatUpdate, ChatBindCharacters, SuccessResponse
-from backend.database.sqlite import bind_chat_characters
+from database.sqlite import (
+    get_session, create_chat, get_all_chats, get_chat, update_chat, delete_chat,
+    set_chat_archived,
+)
+from database.chroma import get_memories_collection
+from models.schemas import ChatCreate, ChatUpdate, ChatBindCharacters, ChatArchiveUpdate, SuccessResponse
+from database.sqlite import bind_chat_characters
 from pydantic import BaseModel
 from typing import Optional
 import json
@@ -28,6 +31,7 @@ def get_all(session: Session = Depends(get_session)):
             "world_id":            c.world_id,
             "character_bindings":  json.loads(c.character_bindings or "{}"),
             "activation_state":    c.activation_state,
+            "archived":            c.archived,
         }
         for c in chats
     ]
@@ -36,6 +40,12 @@ def get_all(session: Session = Depends(get_session)):
 def update(chat_id: str, body: ChatUpdate, session: Session = Depends(get_session)):
     result = update_chat(session, chat_id, body.title, body.updated_at)
     if not result:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return SuccessResponse()
+
+@router.patch("/{chat_id}/archive", response_model=SuccessResponse)   # NEW
+def archive(chat_id: str, body: ChatArchiveUpdate, session: Session = Depends(get_session)):
+    if not set_chat_archived(session, chat_id, body.archived):
         raise HTTPException(status_code=404, detail="Chat not found")
     return SuccessResponse()
 
@@ -63,7 +73,7 @@ def delete(chat_id: str, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Chat not found")
     return SuccessResponse()
 
-from backend.database.sqlite import set_chat_world
+from database.sqlite import set_chat_world
 
 class ChatWorldUpdate(BaseModel):
     world_id: Optional[str] = None

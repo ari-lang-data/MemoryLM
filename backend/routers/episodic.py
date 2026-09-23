@@ -2,13 +2,13 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlmodel import Session
 from typing import Optional
 from datetime import datetime, timezone
-from backend.database.sqlite import (
+from database.sqlite import (
     get_session,
     create_inference, get_inferences, get_inference,
     resolve_inference, update_inference_confidence, delete_inference,
     create_fact, get_facts, get_fact, delete_fact,
 )
-from backend.models.schemas import (
+from models.schemas import (
     InferenceCreate, InferenceResolve, InferenceConfidenceUpdate,
     FactCreate, SuccessResponse,
 )
@@ -35,19 +35,30 @@ def create_inference_route(body: InferenceCreate, session: Session = Depends(get
     )
     return SuccessResponse()
 
+from database.sqlite import get_chat, World
+from database.worldtime import world_decayed_confidence, real_time_decayed_confidence
+
 @router.get("/inferences")
-def list_inferences(
-    chat_id: str,
-    status: Optional[str] = None,
-    session: Session = Depends(get_session),
-):
-    """
-    Returns inferences for a chat, optionally filtered by status.
-    status: "active" | "resolved" | None (returns all)
-    """
+def list_inferences(chat_id: str, status: Optional[str] = None, session: Session = Depends(get_session)):
     if status and status not in ("active", "resolved"):
         raise HTTPException(status_code=400, detail="status must be 'active' or 'resolved'")
-    return get_inferences(session, chat_id, status)
+    inferences = get_inferences(session, chat_id, status)
+
+    chat  = get_chat(session, chat_id)
+    world = session.get(World, chat.world_id) if chat and chat.world_id else None
+
+    for inf in inferences:
+        if inf["status"] != "active":
+            continue  # resolved states are historical record — don't decay them
+        if world:
+            inf["confidence"] = round(world_decayed_confidence(
+                inf["confidence"], inf.get("world_time_at_update"), world.current_offset_minutes
+            ), 4)
+        else:
+            inf["confidence"] = round(real_time_decayed_confidence(
+                inf["confidence"], inf["updated_at"]
+            ), 4)
+    return inferences
 
 @router.get("/inferences/{inference_id}")
 def get_inference_route(inference_id: str, session: Session = Depends(get_session)):

@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from pydantic import BaseModel
 from typing import Optional
-from backend.database.sqlite import get_session, World, WorldCharacterLink, DEFAULT_CALENDAR
-from backend.database.worldtime import advance_world_time, format_world_time
+from database.sqlite import get_session, World, WorldCharacterLink, DEFAULT_CALENDAR
+from database.worldtime import advance_world_time, format_world_time
 from datetime import datetime, timezone
 import json, uuid
 
@@ -24,7 +24,7 @@ class AdvanceRequest(BaseModel):
 @router.post("/")
 def create_world(body: WorldCreate, session: Session = Depends(get_session)):
     world = World(
-        id=str(uuid.uuid4()), name=body.name, description=body.description,
+        id=str(uuid.uuid4()), name=body.name, blurb=body.blurb, llm_context=body.llm_context,
         preset_id=body.preset_id, calendar_config=json.dumps(body.calendar_config),
         current_offset_minutes=0, created_at=now(), updated_at=now(),
     )

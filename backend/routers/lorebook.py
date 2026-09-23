@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
-from backend.database.chroma import get_lorebook_collection
-from backend.models.schemas import LorebookAdd, LorebookUpdate, LorebookQuery, SuccessResponse
+from database.chroma import get_lorebook_collection
+from models.schemas import LorebookAdd, LorebookUpdate, LorebookQuery, SuccessResponse
 from pydantic import BaseModel
 
 router = APIRouter()

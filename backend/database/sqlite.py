@@ -5,7 +5,11 @@ from typing import Sequence
 import json
 from dotenv import load_dotenv
 import os
+
 import datetime
+import hashlib
+import secrets
+import uuid
 
 # ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -17,6 +21,7 @@ class Chat(SQLModel, table=True):
     world_id: Optional[str] = Field(default=None)
     activation_state: str = Field(default="{}")
     active_children: str = Field(default="{}")
+    archived: bool = Field(default=False)
     created_at: str
     updated_at: str
 
@@ -118,26 +123,28 @@ load_dotenv()
 SQLITE_PATH = os.getenv("SQLITE_PATH", "sqlite:///./memorylm.db")
 engine = create_engine(SQLITE_PATH, echo=False)
 
+# database/sqlite.py — replace the migration section inside init_db()
+SQLITE_MIGRATIONS = [
+    ("chat", "chat_type",           "VARCHAR DEFAULT 'standard'"),
+    ("chat", "character_bindings",  "VARCHAR DEFAULT '{}'"),
+    ("chat", "activation_state",    "VARCHAR DEFAULT '{}'"),
+    ("chat", "active_children",     "VARCHAR DEFAULT '{}'"),
+    ("chat", "world_id",            "VARCHAR DEFAULT NULL"),
+    ("episodicinference", "world_time_at_update", "INTEGER DEFAULT NULL"),
+]
+
 def init_db():
     SQLModel.metadata.create_all(engine)
     with engine.connect() as conn:
-        for col, definition in [
-            ("chat_type",          "VARCHAR DEFAULT 'standard'"),
-            ("character_bindings", "VARCHAR DEFAULT '{}'"),
-            ("activation_state", "VARCHAR DEFAULT '{}'"),
-            ("active_children", "VARCHAR DEFAULT '{}'"),
-            ("world_id", "VARCHAR DEFAULT NULL"),
-            ("world_time_at_update", "INTEGER DEFAULT NULL"),
-            ("blurb",       "VARCHAR DEFAULT ''"),
-            ("llm_context", "VARCHAR DEFAULT ''"),
-        ]:
+        for table, col, definition in SQLITE_MIGRATIONS:
             try:
-                conn.execute(text(f"ALTER TABLE chat ADD COLUMN {col} {definition}"))
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {definition}"))
                 conn.commit()
             except Exception as e:
-                if "duplicate column" not in str(e).lower() and "already exists" not in str(e).lower():
-                    print(f"Migration warning (chat.{col}): {e}")
-
+                msg = str(e).lower()
+                if "duplicate column" not in msg and "already exists" not in msg:
+                    print(f"Migration warning ({table}.{col}): {e}")
+                    
 def get_session():
     with Session(engine) as session:
         yield session
@@ -193,6 +200,15 @@ def set_chat_world(session: Session, chat_id: str, world_id: Optional[str]) -> b
     if not chat:
         return False
     chat.world_id = world_id
+    session.add(chat)
+    session.commit()
+    return True
+
+def set_chat_archived(session: Session, chat_id: str, archived: bool) -> bool:
+    chat = session.get(Chat, chat_id)
+    if not chat:
+        return False
+    chat.archived = archived
     session.add(chat)
     session.commit()
     return True
@@ -431,6 +447,37 @@ def delete_message_node(session: Session, chat_id: str, node_id: str) -> bool:
     session.delete(m)
     session.commit()
     return True
+
+def truncate_after_node(session: Session, chat_id: str, node_id: str) -> bool:
+    """Delete every descendant of node_id, keeping node_id itself. Used by rewind."""
+    all_nodes = session.exec(select(MessageNode).where(MessageNode.chat_id == chat_id)).all()
+    by_parent: dict = {}
+    for n in all_nodes:
+        by_parent.setdefault(n.parent_id, []).append(n)
+
+    to_delete = []
+    def collect(pid):
+        for child in by_parent.get(pid, []):
+            to_delete.append(child)
+            collect(child.id)
+    collect(node_id)
+
+    if not to_delete:
+        return True  # nothing after this node — valid no-op
+
+    deleted_ids = {n.id for n in to_delete}
+    for n in to_delete:
+        session.delete(n)
+
+    chat = session.get(Chat, chat_id)
+    if chat:
+        active_children = json.loads(chat.active_children or "{}")
+        pruned = {k: v for k, v in active_children.items() if k not in deleted_ids and v not in deleted_ids}
+        chat.active_children = json.dumps(pruned)
+        session.add(chat)
+
+    session.commit()
+    return True
  
 def get_chat_message_nodes(session: Session, chat_id: str) -> list[dict]:
     rows = session.exec(select(MessageNode).where(MessageNode.chat_id == chat_id)).all()
@@ -504,3 +551,50 @@ def _node_to_dict(m: MessageNode) -> dict:
         "injectedLore":     m.injected_lore,
         "injectedRefs":     json.loads(m.injected_refs or "{}"),
     }
+
+# ―――――― Authentication ――――――――――――――――――――――――――――――――――――――――――――――――
+from datetime import datetime, timezone
+
+class ApiToken(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    label: str
+    token_hash: str
+    created_at: str
+    last_used_at: Optional[str] = None
+
+def hash_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+def create_api_token(session: Session, label: str) -> str:
+    """Returns the raw token — this is the only moment it's ever visible again."""
+    raw = secrets.token_urlsafe(32)
+    session.add(ApiToken(
+        id=str(uuid.uuid4()),
+        label=label,
+        token_hash=hash_token(raw),
+        created_at=datetime.now(timezone.utc).isoformat(),
+    ))
+    session.commit()
+    return raw
+
+def list_api_tokens(session: Session):
+    return session.exec(select(ApiToken)).all()
+
+def revoke_api_token(session: Session, token_id: str) -> bool:
+    token = session.get(ApiToken, token_id)
+    if not token:
+        return False
+    session.delete(token)
+    session.commit()
+    return True
+
+def verify_api_token(session: Session, raw: str) -> bool:
+    if not raw:
+        return False
+    token = session.exec(select(ApiToken).where(ApiToken.token_hash == hash_token(raw))).first()
+    if not token:
+        return False
+    token.last_used_at = datetime.now(timezone.utc).isoformat()
+    session.add(token)
+    session.commit()
+    return True

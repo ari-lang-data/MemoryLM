@@ -1,5 +1,6 @@
 import {loadStorage} from "../lib/storage";
 import{inputStyle} from "../lib/constants";
+import { useHasHover } from "../hooks/useHasHover";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -7,7 +8,11 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
 import InjectionPanel from "./InjectionPanel";
-import { ArrowUp, FastForward } from "lucide-react";
+import { ArrowUp, FastForward, Rewind, Pencil, X, GitBranch, ChevronLeft, ChevronRight, Rotate3DIcon } from "lucide-react";
+import { GlassRimDefs } from "./GlassBubble";
+import GlassBubble from "./GlassBubble";
+import RegenerateIcon from "./icons/RegenerateIcon";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 export default function Chat({chats,
         activeChatId,
@@ -38,7 +43,7 @@ export default function Chat({chats,
         nodes,
         activeChildren,
         switchBranch,
-        forkChat,
+        forkChat, rewind,
         branchMode,
         getSiblings,onExtractEntities,
         extracting, confirm, characters,
@@ -53,6 +58,8 @@ export default function Chat({chats,
           const style           = config.style ?? "none";
           const normalParagraphMargin = "0 0 8px";
           const rpParagraphMargin = "0 0 16px";
+          const hasHover = useHasHover();
+          const isMobile = useIsMobile();
 
           const showContinuation =
             messages.length > 0 && (
@@ -71,37 +78,25 @@ export default function Chat({chats,
               parentId:     nodeId,
             };
           }
-          const RegenerateIcon = ({ size = 24, strokeWidth = 2.2, color = "var(--color-text-primary)", ...props }) => (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width={size}
-              height={size}
-              viewBox="-2 -1 24 24"
-              fill="none"
-              stroke={color}
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              {...props}
-            >
-              <path d="M12 4a8 8 0 1 1-11.5 3" />
-            <polyline points="10,8 10,2 15.5,2" />
-            </svg>
-          );
+
+          const visibleMessages = messages
+            .map((m, originalIndex) => ({ ...m, originalIndex }))
+            .filter(m => !m.implicit);
+          const lastVisibleId = visibleMessages[visibleMessages.length - 1]?.id;
+          
+          <GlassRimDefs/>
+
     return(
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", width: "100%" }}>
             <div style={{flex: 1, overflowY: "auto", width: "100%"}}>
-            <div style={{padding: 16, display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 800, margin: "0 auto", minHeight: "100%"}}>
+            <div style={{padding: 16, display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 800 , margin: "0 auto", minHeight: "100%"}}>
               {messages.length === 0 && (
                 <div style={{ margin: "auto", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 14, padding: 32 }}>
                   <div style={{ fontSize: 32, marginBottom: 8 }}>🧠</div>
                   Start a conversation. Memories are retrieved and injected automatically.
                 </div>
               )}
-              {messages
-                .map((m, originalIndex) => ({ ...m, originalIndex }))
-                .filter(m => !m.implicit)
-                .map((m, i) => {
+              {visibleMessages.map((m, i) => {
                   const branchInfo = m.parentId ? getBranchInfo(m.parentId) : null;
                   return (
                     <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start", width: "100%" }}>
@@ -112,14 +107,14 @@ export default function Chat({chats,
                           <button
                             onClick={() => switchBranch(branchInfo.parentId, -1)}
                             style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}
-                          >‹</button>
+                          ><ChevronLeft size={13}/></button>
                           <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
                             {branchInfo.currentIndex}/{branchInfo.total}
                           </span>
                           <button
                             onClick={() => switchBranch(branchInfo.parentId, 1)}
                             style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}
-                          >›</button>
+                          ><ChevronRight size={13}/></button>
                         </div>
                       )}
 
@@ -170,8 +165,9 @@ export default function Chat({chats,
                           </div>
                         </div>
                       ) : (
-                        <div style={{ maxWidth: 680, display: "flex", flexDirection: "column", gap: 3, alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
-                          <div style={{ padding: "10px 14px", borderRadius: "var(--border-radius-lg)", background: m.role === "user" ? "var(--color-bubble-user)" : "var(--color-bubble-model)", border: "0.5px solid var(--color-border-tertiary)", fontSize: 14, lineHeight: 1.65, color: m.role === "user" ? "var(--color-bubble-user-text)" : "var(--color-text-primary)", fontFamily: config?.style == "roleplay" ? "var(--font-serif)" : "var(--font-sans)" }}>
+                        <div className="chat-bubble"
+                          style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: m.role === "user" ? "flex-end" : "flex-start", position: "relative", padding: m.role === "user" ? "20px 0px 30px" : "2px 0px 5px" }}>
+                          <GlassBubble style={{ padding: "10px 14px", borderRadius: "var(--border-radius-lg)", background: m.role === "user" ? "var(--color-bubble-user)" : "var(--color-bubble-model)", fontSize: 14, lineHeight: 1.65, color: m.role === "user" ? "var(--color-bubble-user-text)" : "var(--color-text-primary)", fontFamily: config?.style == "roleplay" ? "var(--font-serif)" : "var(--font-sans)" }}>
                             <ReactMarkdown
                               remarkPlugins={[remarkMath]}
                               rehypePlugins={[rehypeKatex]}
@@ -199,40 +195,54 @@ export default function Chat({chats,
                             >
                               {m.content}
                             </ReactMarkdown>
-                          </div>
-
-                          {/* Action buttons */}
-                          <div style={{ display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}
-                            onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                            onMouseLeave={e => e.currentTarget.style.opacity = 0}>
-                            <button
-                              onClick={() => setEditingMessage({ index: m.originalIndex, draft: m.content })}
-                              style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}
-                              title="Edit"
-                            >✎</button>
-                            {m.role === "assistant" && (
-                                <button
-                                  onClick={() => forkChat(m.id)}
-                                  style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}
-                                  title="Fork to new chat"
-                                >⎇</button>
-                            )}
-                            <button
-                              onClick={async () => { if (await confirm("Delete this message?")) deleteMessage(m.id); }}
-                              style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14, padding: "2px 4px" }}
-                              title="Delete"
-                            >×</button>
-                          </div>
+                          </GlassBubble>
 
                           {(m.injectedMems > 0 || m.injectedLore > 0) && (
                             <span
                               onMouseEnter={() => onInjectionHover(m.injectedMemData ?? [], m.injectedLoreData ?? [], m.injectedInferenceData ?? [])}
                               onMouseLeave={onInjectionLeave}
-                              style={{ fontSize: 11, color: "var(--color-text-tertiary)", cursor: "default" }}
+                              style={{ fontSize: 11, color: "var(--color-text-tertiary)", cursor: "default", padding: "2px 0" }}
                             >
                               {[m.injectedMems > 0 && `${m.injectedMems} mem`, m.injectedLore > 0 && `${m.injectedLore} lore`].filter(Boolean).join(" · ")} injected
                             </span>
                           )}
+
+                          {/* Action buttons */}
+                          <div
+                            onMouseEnter={hasHover ? (e => e.currentTarget.style.opacity = 1) : undefined}
+                            onMouseLeave={hasHover ? (e => e.currentTarget.style.opacity = 0) : undefined}
+                            style={{
+                              display: "flex", gap: 4,
+                              opacity: hasHover ? 0 : 0.85,
+                              transition: "opacity 0.15s",
+                              position: "absolute", bottom: m.role === "user" ? -15 : -22,
+                              right: m.role === "user" ? 0 : "auto",
+                              left: m.role === "user" ? "auto" : 0,
+                              background: "var(--color-background-secondary)",
+                              border: "0.5px solid var(--color-border-tertiary)",
+                              borderRadius: "var(--border-radius-md)",
+                              padding: "2px 4px", zIndex: 2,
+                            }}
+                          >
+                            {m.role === "assistant" && m.id === lastVisibleId && (
+                              <button onClick={regenerate} disabled={loading} title="Regenerate"
+                                style={{ background: "transparent", border: "none", cursor: loading ? "not-allowed" : "pointer", color: "var(--color-text-tertiary)", padding: "2px 4px", opacity: loading ? 0.35 : 1, display: "flex" }}>
+                                <RegenerateIcon size={13} strokeWidth={2.2} color="var(--color-text-tertiary)" />
+                              </button>
+                            )}
+                            <button onClick={() => setEditingMessage({ index: m.originalIndex, draft: m.content })} title="Edit" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}><Pencil size={13}/></button>
+                            {m.role === "assistant" && (
+                              <button onClick={() => forkChat(m.id)} title="Fork to new chat" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}><GitBranch size={13}/></button>
+                            )}
+                            {m.role === "assistant" && m.id != lastVisibleId && (
+                              <button
+                                onClick={async () => { if (await confirm("Rewind chat to this point? Everything after will be deleted.")) rewind(m.id); }}
+                                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}
+                                title="Rewind to here"
+                              ><Rewind size={13}/></button>
+                            )}
+                            <button onClick={async () => { if (await confirm("Delete this message?")) deleteMessage(m.id); }} title="Delete" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 14, padding: "2px 4px" }}><X size={13}/></button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -242,8 +252,8 @@ export default function Chat({chats,
             </div>
             </div>
 
-            <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", display: "flex", justifyContent: "center", borderTopLeftRadius: "var(--border-radius-lg)", borderTopRightRadius: "var(--border-radius-lg)", borderBottomLeftRadius: (config.style ==="roleplay" ? "var(--border-radius-lg)" : 0), borderBottomRightRadius: (config.style ==="roleplay" ? "var(--border-radius-lg)" : 0), alignSelf: "center",width: "100%", maxWidth: 800}}>
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", width: "100%", maxWidth: 680 }}>
+            <div className="input-slate" style={{ padding: "12px 0px", borderTop: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", display: "flex", justifyContent: "center", borderTopLeftRadius: "14px", borderTopRightRadius: "14px", borderBottomLeftRadius: (config.style ==="roleplay" ? "14px" : 0), borderBottomRightRadius: (config.style ==="roleplay" ? "14px" : 0), alignSelf: "center",width: "100%"}}>
+              <div className="input-box" style={{ display: "flex", gap: 8, flexDirection: "column", width: "100%" }}>
                 {pendingNarrativeTurn && (() => {
                   const char = characters?.find(c => c.id === pendingNarrativeTurn.charId);
                   return (
@@ -283,28 +293,60 @@ export default function Chat({chats,
                     </div>
                   );
                 })()}
-                <textarea
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                  placeholder="Message… (Enter to send, Shift+Enter for newline)"
-                  style={{ flex: 1, resize: "none", minHeight: 90, maxHeight: 140, padding: "10px 12px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)", color: "var(--color-text-primary)", fontSize: 14, fontFamily: "var(--font-sans)", lineHeight: 1.5 }}
-                />
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <button
-                    onClick={sendMessage}
-                    disabled={loading || (!input.trim() && !showContinuation)}
-                    title={showContinuation && !input.trim() ? "Continue" : "Send"}
-                    style={{ padding: "9px 14px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: loading || !input.trim() ? "transparent": "var(--color-send-button)", cursor: loading || (!input.trim() && !showContinuation) ? "not-allowed" : "pointer", color: "var(--color-text-primary)", fontSize: 16, opacity: loading || (!input.trim() && !showContinuation) ? 0.35 : 1 }}
-                  >
-                    {showContinuation && !input.trim() ? <FastForward size={16}/> : <ArrowUp size={16}/>}
-                  </button>
-                  <button
-                    onClick={regenerate}
-                    disabled={loading || messages.length < 2}
-                    title="Regenerate last response"
-                    style={{ padding: "9px 14px", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", background: "transparent", cursor: loading || messages.length < 2 ? "not-allowed" : "pointer", color: "var(--color-text-secondary)", fontSize: 14, opacity: loading || messages.length < 2 ? 0.35 : 1 }}
-                  ><RegenerateIcon size={16} color="var(--color-text-primary)" /></button>
+                <div className="message-composer">
+                  <textarea
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (isMobile) return;
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                      }
+                    }}
+                    placeholder={isMobile ? "Message…" :"Message… (Enter to send, Shift+Enter for newline)"}
+                    enterKeyHint={isMobile ? "enter" : undefined}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px 0px",
+                      border: "none",
+                      outline: "none",
+                      background: "transparent",
+                      color: "var(--color-text-primary)",
+                      fontSize: 14,
+                      fontFamily: "var(--font-sans)",
+                      lineHeight: 1.5,
+                      resize: "none",
+                      boxSizing: "border-box",
+                    }}
+                  />
+
+                  <div className="message-composer-actions">
+                    <button
+                      onClick={sendMessage}
+                      disabled={loading || (!input.trim() && !showContinuation)}
+                      title={showContinuation && !input.trim() ? "Continue" : "Send"}
+                      style={{
+                        width: 36,
+                        height: 36,
+                        padding: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: "var(--border-radius-md)",
+                        border: "0.5px solid var(--color-border-secondary)",
+                        background:
+                          loading || !input.trim() ? "var(--color-background-primary)" : "var(--color-send-button)",
+                        cursor:
+                          loading || (!input.trim() && !showContinuation) ? "not-allowed" : "pointer",
+                        color: "var(--color-text-primary)",
+                        opacity:
+                          loading || (!input.trim() && !showContinuation) ? 0.35 : 1,
+                      }}
+                    >
+                      {showContinuation && !input.trim() ? <FastForward size={16} /> : <ArrowUp size={16} />}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

@@ -3,7 +3,6 @@ from chromadb import Collection
 from chromadb.api import ClientAPI
 from typing import Optional
 
-# top of database/chroma.py
 from dotenv import load_dotenv
 import os
 load_dotenv()

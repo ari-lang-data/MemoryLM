@@ -1,20 +1,22 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from backend.database.sqlite import init_db
+from database.sqlite import init_db
+from auth import require_auth
 from dotenv import load_dotenv
 import os
-from backend.routers import memories, lorebook, chats, presets, messages, clusters, graph, episodic
-from backend.database.graph import init_graph, switch_to_sqlite
-from backend.routers import events, worlds
-from backend.database.queue_processor import ensure_processor
-from backend.database.queue import enqueue as queue_enqueue
-from backend.database.migrate_messages import migrate_json_messages_to_sqlite
+from routers import memories, lorebook, chats, presets, messages, clusters, graph, episodic, tokens
+from database.graph import init_graph, switch_to_sqlite
+from routers import events, worlds
+from database.queue_processor import ensure_processor
+from database.queue import enqueue as queue_enqueue
+from database.migrate_messages import migrate_json_messages_to_sqlite
 import sys
 
 load_dotenv()
 
-app = FastAPI(title="MemoryLM Backend")
+app = FastAPI(title="MemoryLM Backend", dependencies=[Depends(require_auth)])
 
+app.include_router(tokens.router, prefix="/auth/tokens", tags=["auth"])
 app.include_router(messages.router,  prefix="/messages",  tags=["messages"])
 app.include_router(clusters.router,  prefix="/clusters",  tags=["clusters"])
 app.include_router(graph.router,     prefix="/graph",     tags=["graph"])
@@ -22,9 +24,10 @@ app.include_router(episodic.router,  prefix="/episodic",  tags=["episodic"])
 app.include_router(worlds.router, prefix="/worlds",       tags=["worlds"])
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
+allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGIN", "http://localhost:5173").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("ALLOWED_ORIGIN", "http://localhost:5173")],
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

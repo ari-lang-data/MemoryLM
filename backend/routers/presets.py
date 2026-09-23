@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from sqlmodel import Session
 from fastapi import Depends
-from backend.database.sqlite import get_session, save_preset, get_all_presets, delete_preset
-from backend.models.schemas import PresetSave, SuccessResponse
+from database.sqlite import get_session, save_preset, get_all_presets, delete_preset
+from models.schemas import PresetSave, SuccessResponse
 
 router = APIRouter()
 

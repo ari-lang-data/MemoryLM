@@ -3,7 +3,7 @@ import { memoriesAPI, clustersAPI } from "../lib/api";
 import useEmbedder from "./useEmbedder";
 import { parseReasoning } from "../lib/parseReasoning";
 
-export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, addLog, setMemories }) {
+export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, world_time, addLog, setMemories }) {
   const { embed } = useEmbedder();
 
   async function deduplicateAgainst(newSummary, newVec) {
@@ -93,6 +93,7 @@ export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, addLog
       embedding: vec,
       source:    "auto",
       timestamp: new Date().toISOString(),
+      world_time_at_update: world_time,
       turns:     turns.length,
     };
     await memoriesAPI.add(entry);
@@ -118,6 +119,7 @@ export default function useMemory({ configRef, lmUrlRef, activeChatIdRef, addLog
       embedding: vec,
       source:    "manual",
       timestamp: new Date().toISOString(),
+      world_time_at_update: world_time,
       turns:     0,
     };
     await memoriesAPI.add(entry);

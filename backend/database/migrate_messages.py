@@ -10,7 +10,7 @@ import json
 import shutil
 from pathlib import Path
 from sqlmodel import Session
-from backend.database.sqlite import engine, replace_chat_messages, get_chat
+from database.sqlite import engine, replace_chat_messages, get_chat
 
 MESSAGES_DIR = Path("./messages")
 BACKUP_DIR   = Path("./messages_backup")

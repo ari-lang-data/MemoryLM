@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI, episodicAPI, eventsAPI, worldsAPI } from "./lib/api";
 
 import useEmbedder from "./hooks/useEmbedder";
@@ -10,7 +10,7 @@ import { resolveTemplate } from "./lib/templateResolver";
 import { useTheme }                  from "./hooks/useTheme";
 import { useConfirm }                from "./components/useConfirm";
 import { useKeyboardShortcuts }      from "./hooks/useKeyboardShortcuts";
-import KeyboardShortcutsModal        from "./components/KeyboardShortcutsModal";
+import { useIsMobile }               from "./hooks/useIsMobile";
 
 
 // ── LM fetch ────────────────────────────────────────────────────────────────
@@ -20,7 +20,6 @@ import {lmFetch} from "./lib/lmFetch";
 import useMemory from "./hooks/useMemory";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-import {EMBED_MODEL} from "./lib/constants";
 import {DEFAULT_LM_STUDIO_URL} from "./lib/constants";
 import {DEDUP_THRESHOLD} from "./lib/constants";
 import {STORAGE_KEYS} from "./lib/constants";
@@ -34,9 +33,8 @@ import {saveStorage,loadStorage} from "./lib/storage";
 // ─── Shared styles ────────────────────────────────────────────────────────────
 import {inputStyle} from "./lib/constants";
 
-import {Card,CardTitle,Row} from "./components/ui/shared";
-
 //─── Panels ──────────────────────────────────────────────────────────────────────
+  import Home from "./components/Home";
   import Chat from "./components/Chat";
   import Memory from "./components/Memory";
   import Lorebook from "./components/Lorebook";
@@ -46,8 +44,10 @@ import {Card,CardTitle,Row} from "./components/ui/shared";
   import CharacterTab from "./components/CharacterTab";
   import GraphPanel from "./components/GraphPanel";
   import GroupChatSetupModal from "./components/GroupChatSetupModal";
+  import KeyboardShortcutsModal from "./components/KeyboardShortcutsModal";
   import WorldCreatorModal from "./components/WorldCreatorModal";
   import WorldSelectorModal from "./components/WorldSelectorModal";
+  import CharacterProfileCard from "./components/CharacterProfileCard";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -79,6 +79,7 @@ export default function App() {
   const [entities,      setEntities]      = useState([]);
   const [charactersLoading, setCharactersLoading] = useState(false);
   const [characters,    setCharacters]    = useState([]);
+  const [profileCardOpen, setProfileCardOpen] = useState(false);
   const [templateVars,  setTemplateVars]  = useState([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeCharId,  setActiveCharId]  = useState(null);
@@ -101,6 +102,7 @@ export default function App() {
   const hoverTimerRef = useRef(null);
   const turnsSinceChunk = useRef(0);
   const messagesEndRef  = useRef(null);
+  const scrolledForChatRef = useRef(null);
   const configRef       = useRef(config);
   const lmUrlRef        = useRef(lmStudioUrl);
   const chatNodesRef          = useRef(nodes);
@@ -109,7 +111,7 @@ export default function App() {
   const nodesChatRef = useRef(null); // tracks which chat the current nodes belong to
 
   const activeChat = chats.find(c => c.id === activeChatId)?? chats[0];
-  const messages = getActivePath(nodes, activeChildren)
+  const messages = useMemo(() => getActivePath(nodes, activeChildren), [nodes, activeChildren]);
 
   useEffect(() => { configRef.current  = config;      }, [config]);
   useEffect(() => { lmUrlRef.current   = lmStudioUrl; }, [lmStudioUrl]);
@@ -118,7 +120,33 @@ export default function App() {
   useEffect(() => { localStorage.setItem("memorylm_director_model", directorModel);}, [directorModel]);
   useEffect(() => { chatNodesRef.current          = nodes;          }, [nodes]);
   useEffect(() => { chatActiveChildrenRef.current = activeChildren; }, [activeChildren]);
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => { scrolledForChatRef.current = null; }, [activeChatId]);
+  // Scrolls exactly once per chat: the first time messages appear after a
+  // switch. Sends, edits, regenerates, streaming — none of those re-trigger
+  // it, because the ref already matches activeChatId by then.
+  useEffect(() => {
+    if (scrolledForChatRef.current === activeChatId) return;
+    if (!messages.length) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrolledForChatRef.current = activeChatId;
+  }, [messages, activeChatId]);
+  // Follow along while a response is streaming — but only if the user is
+  // already near the bottom, so scrolling up mid-generation to reread
+  // context doesn't get yanked back down every token.
+  useEffect(() => {
+    if (!loading) return;
+    const el = messagesEndRef.current?.parentElement;
+    const nearBottom = !el || (el.scrollHeight - el.scrollTop - el.clientHeight < 120);
+    if (!nearBottom) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [loading, messages[messages.length - 1]?.content]);
+
+  // Switching back to the Chat panel from Memory/Lorebook/Graph/Characters
+  useEffect(() => {
+    if (activePanel !== "chat") return;
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [activePanel]);
+
   useEffect(() => {
     if (!activeChatId) return;
     memoriesAPI.getByChat(activeChatId).then(setMemories).catch(console.error);
@@ -127,6 +155,7 @@ export default function App() {
 
   const { theme, setTheme, themes } = useTheme();
   const { confirm, ConfirmModalRenderer } = useConfirm();
+  const isMobile = useIsMobile();
 
   useKeyboardShortcuts({
     activePanel,
@@ -414,6 +443,7 @@ export default function App() {
     setActiveChatId(newChat.id);
     saveStorage(`mem_messages_${newChat.id}`, []);
     nodesChatRef.current = newChat.id; // mark as valid after creation
+    return newChat.id;
   }
 
   async function switchChat(id) {
@@ -475,6 +505,14 @@ export default function App() {
     }
   }
 
+  async function archiveChat(id) {
+    const target = chats.find(c => c.id === id);
+    if (!target) return;
+    const nextArchived = !target.archived;
+    await chatsAPI.archive(id, nextArchived);
+    setChats(prev => prev.map(c => c.id === id ? { ...c, archived: nextArchived } : c));
+  }
+
   async function renameChat(id, title) {
     await chatsAPI.update(id, title, new Date().toISOString());
     setChats(prev => prev.map(c => c.id === id ? { ...c, title } : c));
@@ -500,9 +538,10 @@ export default function App() {
 
   async function onWorldSelected(worldId) {
     setWorldSelectorOpen(false);
-    await createNewChat();
-    await chatsAPI.setWorld(activeChatIdRef.current, worldId);
-    setChats(prev => prev.map(c => c.id === activeChatIdRef.current ? { ...c, world_id: worldId } : c));
+    const newChatId = await createNewChat();
+    await chatsAPI.setWorld(newChatId, worldId);
+    setChats(prev => prev.map(c => c.id === newChatId ? { ...c, world_id: worldId } : c));
+    ensureWorldCached(worldId);
   }
 
   async function onWorldSkipped() {
@@ -541,7 +580,8 @@ export default function App() {
   const {status: embedderStatus, embed} = useEmbedder();
 
   // ── Summarise & store ───────────────────────────────────────────────────────
-  const {addManualMemory,summariseAndStore} = useMemory({configRef, lmUrlRef, activeChatIdRef, addLog, setMemories})
+  const world_time = worldTimeCache[activeChat.world_id]
+  const {addManualMemory,summariseAndStore} = useMemory({configRef, lmUrlRef, activeChatIdRef, world_time, addLog, setMemories})
 
   // ―― Events ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
   const { enqueue: enqueueEvent } = useEventQueue(activeChatId, {
@@ -794,9 +834,11 @@ export default function App() {
       episodicAPI.getInferences(activeChatIdRef.current, "active").catch(() => []),
     ]);
 
+    const forceDirectForExperiment = localStorage.getItem("mlm_experiment_logging") === "true";
+
     let retrievedMems = [];
     if (queryVec) {
-      const clusterHits = await clustersAPI.query(
+      const clusterHits = forceDirectForExperiment ? [] : await clustersAPI.query(
         activeChatIdRef.current, queryVec, profile.topK, profile.threshold
       );
       if (clusterHits.length > 0) {
@@ -817,7 +859,8 @@ export default function App() {
         retrievedMems = await memoriesAPI.query(
           activeChatIdRef.current, queryVec,
           profile.topK, profile.threshold,
-          profile.alpha, profile.decayRate
+          profile.alpha, profile.decayRate,
+          localStorage.getItem("mlm_experiment_logging") === "true" ? content : null
         );
       }
     }
@@ -881,9 +924,10 @@ export default function App() {
 
     const queryVec = await embed(queryContent);
     
-    const { injected, relMems, relLore, activeInferences } = await buildInjectedContext(
+    const { injected: baseInjected, relMems, relLore, activeInferences } = await buildInjectedContext(
       queryVec, queryContent, overrideCharId
     );
+    let injected = baseInjected;
     // After character context injection, for non-creative presets:
     if (!["creative", "roleplay"].includes(cfg.style ?? "none") && entities.length > 0) {
       const graphContext = await buildResearchContext(queryContent);
@@ -1213,6 +1257,13 @@ export default function App() {
     setSidebarOpen(true);
   }
 
+  async function rewindChat(nodeId) {
+    await messagesAPI.rewindTo(activeChatId, nodeId);
+    const savedMsgs = await messagesAPI.get(activeChatId);
+    setNodes(savedMsgs?.nodes ?? []);
+    setActiveChildren(savedMsgs?.activeChildren ?? {});
+  }
+
   async function buildGraphContext(entityId, queryContent) {
     try {
       const edges = await graphAPI.traverse(entityId, 1);
@@ -1373,22 +1424,6 @@ export default function App() {
     }
   }
 
-  async function savePreset(draft) {
-    await presetsAPI.save(draft);
-    const isNew = !presets.find(p => p.id === draft.id);
-    const next  = isNew
-      ? [...presets, draft]
-      : presets.map(p => p.id === draft.id ? draft : p);
-    setPresets(next);
-    setEditingPreset(null);
-    setPresetDraft(null);
-
-    // Auto-apply if this is the active preset
-    if (draft.id === activePreset) {
-    applyPreset(draft);
-    }
-  }
-
   async function updatePresetConfig(presetId, key, value) {
     setPresets(prev => {
       const next = prev.map(p => p.id === presetId
@@ -1434,6 +1469,82 @@ export default function App() {
   return (
     <div style={{ fontFamily: "var(--font-sans)", display: "flex", flexDirection: "column", height: "100vh", background: "var(--color-background-tertiary)" }}>
     
+      {/* Header */}
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)", flexShrink: 0 }}>
+        <button
+          onClick={() => setSidebarOpen(o => !o)}
+          style={{ fontFamily: "Playfair Display",fontWeight: 650, fontSize: 17, letterSpacing: "-0.3px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-app-name)", padding: 0 }}
+        >
+          MemoryLM
+        </button>
+        {!isMobile && (
+          <div className="header-nav" >
+            {["chat","memory","lorebook","graph"].map(p => (
+              <button key={p} onClick={() => setActivePanel(p)} style={{ padding: "4px 11px", fontSize: 12, borderRadius: "var(--border-radius-md)", border: activePanel === p ? "0.5px solid var(--color-border-primary)" : "0.5px solid transparent", background: activePanel === p ? "var(--color-background-secondary)" : "transparent", color: activePanel === p ? "var(--color-text-primary)" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: activePanel === p ? 500 : 400 }}>
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </button>
+            ))}
+
+            {config?.style === "roleplay" && (
+              <button
+                key="characters"
+                onClick={() => setActivePanel("characters")}
+                style={{ padding: "4px 11px", fontSize: 12, borderRadius: "var(--border-radius-md)", border: activePanel === "characters" ? "0.5px solid var(--color-border-primary)" : "0.5px solid transparent", background: activePanel === "characters" ? "var(--color-background-secondary)" : "transparent", color: activePanel === "characters" ? "var(--color-text-primary)" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: activePanel === "characters" ? 500 : 400 }}
+              >
+                Characters
+              </button>
+            )}
+          </div>
+        )}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+          {(() => {
+            const activeChar = characters.find(c => c.id === activeCharId);
+            if (activeChar && config?.style === "roleplay") {
+              const groupChars = groupChatMembers.length > 0
+                ? characters.filter(c => groupChatMembers.includes(c.id))
+                : [activeChar];
+              return (
+                <button
+                  onClick={() => setProfileCardOpen(o => !o)}
+                  style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: "var(--border-radius-lg)", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", cursor: "pointer" }}
+                >
+                  {groupChars.map(c => {
+                    const m = typeof c.metadata === "string" ? JSON.parse(c.metadata) : (c.metadata ?? {});
+                    return m.avatar
+                      ? <img key={c.id} src={m.avatar} style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} title={c.name} />
+                      : <div key={c.id} style={{ width: 18, height: 18, borderRadius: "50%", background: "var(--color-background-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--color-text-tertiary)", flexShrink: 0 }} title={c.name}>{c.name?.charAt(0)?.toUpperCase()}</div>;
+                  })}
+                  {groupChatMembers.length === 0 && (
+                    <span style={{ fontSize: 13, color: "var(--color-text-secondary)", marginLeft: 4 }}>{activeChar.name}</span>
+                  )}
+                </button>
+              );
+            }
+            if (activePresetObj) {
+              return (
+                <span style={{ fontSize: 13, padding: "2px 8px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
+                  {activePresetObj.icon} {activePresetObj.name}
+                </span>
+              );
+            }
+            return null;
+          })()}
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: statusColor, flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{statusLabel}</span>
+        </div>
+
+        <CharacterProfileCard
+          open={profileCardOpen && config?.style === "roleplay"}
+          onClose={() => setProfileCardOpen(false)}
+          activeChar={characters.find(c => c.id === activeCharId)}
+          groupChars={groupChatMembers.length > 0 ? characters.filter(c => groupChatMembers.includes(c.id)) : null}
+          memories={memories}
+          characters={characters}
+          entities={entities}
+          graphAPI={graphAPI}
+        />
+      </div>
+
       <ChatSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -1442,77 +1553,22 @@ export default function App() {
         onSelectChat={switchChat}
         onNewChat={() => { handleNewChatClick(); setSidebarOpen(false); }}
         onDeleteChat={deleteChat}
+        onArchiveChat={archiveChat}
         onRenameChat={renameChat}
         onOpenSettings={() => setSettingsOpen(true)}
+        isMobile={isMobile}          
+        activePanel={activePanel}     
+        setActivePanel={setActivePanel} 
+        config={config}
+        confirm={confirm}
       />
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)", flexShrink: 0 }}>
-        <button
-          onClick={() => setSidebarOpen(o => !o)}
-          style={{ fontFamily: "Playfair Display",fontWeight: 650, fontSize: 17, letterSpacing: "-0.3px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-app-name)", padding: 0 }}
-        >
-          MemoryLM
-        </button>
-        <div style={{ display: "flex", gap: 3, marginLeft: 6 }}>
-          {["chat","memory","lorebook","graph"].map(p => (
-            <button key={p} onClick={() => setActivePanel(p)} style={{ padding: "4px 11px", fontSize: 12, borderRadius: "var(--border-radius-md)", border: activePanel === p ? "0.5px solid var(--color-border-primary)" : "0.5px solid transparent", background: activePanel === p ? "var(--color-background-secondary)" : "transparent", color: activePanel === p ? "var(--color-text-primary)" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: activePanel === p ? 500 : 400 }}>
-              {p.charAt(0).toUpperCase() + p.slice(1)}
-            </button>
-          ))}
-
-          {config?.style === "roleplay" && (
-            <button
-              key="characters"
-              onClick={() => setActivePanel("characters")}
-              style={{ padding: "4px 11px", fontSize: 12, borderRadius: "var(--border-radius-md)", border: activePanel === "characters" ? "0.5px solid var(--color-border-primary)" : "0.5px solid transparent", background: activePanel === "characters" ? "var(--color-background-secondary)" : "transparent", color: activePanel === "characters" ? "var(--color-text-primary)" : "var(--color-text-secondary)", cursor: "pointer", fontWeight: activePanel === "characters" ? 500 : 400 }}
-            >
-              Characters
-            </button>
-          )}
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-          {(() => {
-            const activeChar = characters.find(c => c.id === activeCharId);
-            const meta       = typeof activeChar?.metadata === "string"
-              ? JSON.parse(activeChar.metadata)
-              : (activeChar?.metadata ?? {});
-
-            if (activeChar && config?.style === "roleplay") {
-              const groupChars = groupChatMembers.length > 0
-                ? characters.filter(c => groupChatMembers.includes(c.id))
-                : [activeChar];
-              return (
-                <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
-                  {groupChars.map(c => {
-                    const m = typeof c.metadata === "string" ? JSON.parse(c.metadata) : (c.metadata ?? {});
-                    return m.avatar
-                      ? <img key={c.id} src={m.avatar} style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} title={c.name} />
-                      : <div key={c.id} style={{ width: 18, height: 18, borderRadius: "50%", background: "var(--color-background-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--color-text-tertiary)", flexShrink: 0 }} title={c.name}>{c.name?.charAt(0)?.toUpperCase()}</div>;
-                  })}
-                  {groupChatMembers.length === 0 && (
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)", marginLeft: 4 }}>{activeChar.name}</span>
-                  )}
-                </div>
-              );
-            }
-
-            if (activePresetObj) {
-              return (
-                <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
-                  {activePresetObj.icon} {activePresetObj.name}
-                </span>
-              );
-            }
-
-            return null;
-          })()}
-          <div style={{ width: 7, height: 7, borderRadius: "50%", background: statusColor, flexShrink: 0 }} />
-          <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{statusLabel}</span>
-          <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{memories.length} mem · {lorebook.length} lore</span>
-        </div>
-      </div>
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center" }}>
+
+        {/* ── HOME ── */}
+        {activePanel === "home" && (
+          <Home chats={chats} switchChat={switchChat} setActivePanel={setActivePanel} graphAPI={graphAPI} />
+        )}
 
         {/* ── CHAT ── */}
         {activePanel === "chat" && (
@@ -1547,6 +1603,7 @@ export default function App() {
             activeChildren={activeChildren}
             switchBranch={switchBranch}
             forkChat={forkChat}
+            rewind={rewindChat}
             branchMode={config?.branchMode ?? "inline"}
             getSiblings={getSiblings}
             onExtractEntities={extractEntities}
@@ -1578,6 +1635,7 @@ export default function App() {
             charactersLoading={charactersLoading}
             onStartGroupChat={config?.style === "roleplay" ? () => setGroupSetupOpen(true) : undefined}
             onOpenWorlds={() => setWorldsModalOpen(true)}
+            confirm={confirm}
           />
         )}
 

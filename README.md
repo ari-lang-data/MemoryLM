@@ -57,24 +57,20 @@ The same pipeline serves a **Lorebook** — a structured knowledge base of chara
 
 ## Setup
 
-### Backend
+### Linux/macOS
 ```bash
-python3 -m venv venv
-# Linux/macOS
-source venv/bin/activate
-
-#Windows
-venv\Scripts\activate
-
-pip install -r requirements.txt
-uvicorn main:app --reload
+git clone https://github.com/ari-lang-data/MemoryLM
+cd MemoryLM
+./scripts/install.sh
+./scripts/dev.sh
 ```
 
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
+### Windows
+```powershell
+git clone https://github.com/ari-lang-data/MemoryLM
+cd MemoryLM
+./scripts/install.ps1
+./scripts/dev.ps1
 ```
 
 Open `http://localhost:5173`. In Settings, set your LM Studio server URL (default `http://localhost:1234`) and make sure CORS is enabled in LM Studio.

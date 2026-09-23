@@ -1,8 +1,8 @@
 import asyncio
 import json
-from backend.database.queue import push_sse, discharge, enqueue, get_sse_queue
-from backend.database.graph import execute as graph_execute
-from backend.models.events import QueueItem
+from database.queue import push_sse, discharge, enqueue, get_sse_queue
+from database.graph import execute as graph_execute
+from models.events import QueueItem
 import httpx
 import os
 

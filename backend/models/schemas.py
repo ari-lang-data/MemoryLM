@@ -10,6 +10,7 @@ class MemoryAdd(BaseModel):
     embedding:       list[float]
     source:          str
     timestamp:       str
+    world_time_at_update:      Optional[int]=None
     turns:           int = 0
     pinned:          bool = False
     retrieval_count: int = 0
@@ -19,6 +20,7 @@ class MemoryUpdate(BaseModel):
     summary:   str
     embedding: list[float]
     timestamp: str
+    world_time_at_update:      Optional[int]=None
     pinned:    bool = False
 
 class MemoryQuery(BaseModel):
@@ -28,6 +30,7 @@ class MemoryQuery(BaseModel):
     threshold: float = 0.35
     alpha:     float = 0.7
     decay_rate: float = 0.01
+    query_text: Optional[str] = None   # only sent when experiment logging is active
 
 class ClusterAssign(BaseModel):
     memory_id:    str
@@ -73,6 +76,9 @@ class ChatCreate(BaseModel):
 class ChatUpdate(BaseModel):
     title: Optional[str] = None
     updated_at: str
+
+class ChatArchiveUpdate(BaseModel):
+    archived: bool
 
 class ChatBindCharacters(BaseModel):
     active_char_id: Optional[str] = None

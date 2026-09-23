@@ -61,7 +61,9 @@ def parse_time_delta(text: str, current: int, cal: dict) -> Optional[int]:
 
     return None
 
-AMBIENT_TURN_MINUTES = 2  # default advancement when no phrase matches
+def ambient_minutes(text: str) -> int:
+    words = len(text.split())
+    return min(1 + words // 60, 8)   # 1 min baseline, +1 per ~60 words, capped at 8
 
 def advance_world_time(session: Session, world_id: str, text: str) -> int:
     """Parses text for time-skip language, advances the world clock, returns new offset."""
@@ -71,7 +73,7 @@ def advance_world_time(session: Session, world_id: str, text: str) -> int:
     cal = json.loads(world.calendar_config)
     new_offset = parse_time_delta(text, world.current_offset_minutes, cal)
     if new_offset is None:
-        new_offset = world.current_offset_minutes + AMBIENT_TURN_MINUTES
+        new_offset = world.current_offset_minutes + ambient_minutes(text)
     world.current_offset_minutes = new_offset
     world.updated_at = datetime.now(timezone.utc).isoformat()
     session.add(world)
@@ -104,3 +106,17 @@ def world_decayed_confidence(base: float, world_time_at_update: Optional[int],
         return base  # no world attached — caller falls back to real-time decay
     dt = max(0, current_world_offset - world_time_at_update)
     return base * math.exp(-dt / tau)
+
+from datetime import datetime, timezone
+
+TAU_REALTIME_DEFAULT = 7 * 24 * 3600.0  # 7 real days — tune later, this is a placeholder default
+
+def real_time_decayed_confidence(base: float, updated_at_iso: str, tau: float = TAU_REALTIME_DEFAULT) -> float:
+    try:
+        updated = datetime.fromisoformat(updated_at_iso)
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        dt = max(0.0, (datetime.now(timezone.utc) - updated).total_seconds())
+        return base * math.exp(-dt / tau)
+    except Exception:
+        return base

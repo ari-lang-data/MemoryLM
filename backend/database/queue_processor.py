@@ -1,8 +1,8 @@
 import asyncio
-from backend.database.queue import get_queue, push_sse, _queues
-from backend.models.events import QueueItem
-from backend.handlers.evaluate import handle_evaluate
-from backend.handlers.generate import handle_generate
+from database.queue import get_queue, push_sse, _queues
+from models.events import QueueItem
+from handlers.evaluate import handle_evaluate
+from handlers.generate import handle_generate
 import os
 
 async def process_item(item: QueueItem):

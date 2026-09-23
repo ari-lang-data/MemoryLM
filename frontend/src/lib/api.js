@@ -1,9 +1,29 @@
-const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const BASE_URL = import.meta.env.VITE_API_URL ?? `${window.location.protocol}//${window.location.hostname}:8000`;
+const TOKEN_KEY = "memlm:apiToken";
+
+export async function checkAuth() {
+  try {
+    const token = getApiToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(`${BASE_URL}/`, { headers });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export function getApiToken() { return localStorage.getItem(TOKEN_KEY) ?? ""; }
+export function setApiToken(token) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
 
 async function request(method, path, body) {
+  const headers = body ? { "Content-Type": "application/json" } : {};
+  const token = getApiToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : {},
+    method, headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -13,11 +33,19 @@ async function request(method, path, body) {
   return res.json();
 }
 
+// ――― Authentication ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+export const authAPI = {
+  getTokens:    ()      => request("GET",    "/auth/tokens/"),
+  createToken:  (label) => request("POST",   "/auth/tokens/", { label }),
+  revokeToken:  (id)    => request("DELETE", `/auth/tokens/${id}`),
+};
+
 // ─── Chats ────────────────────────────────────────────────────────────────────
 export const chatsAPI = {
   getAll:  ()                                    => request("GET",    "/chats/"),
   create:  (id, title, created_at, updated_at)   => request("POST",   "/chats/",        { id, title, created_at, updated_at }),
   update:  (id, title, updated_at)               => request("PATCH",  `/chats/${id}`,   { title, updated_at }),
+  archive: (id, archived)                        => request("PATCH",  `/chats/${id}/archive`, { archived }),
   setWorld: (chat_id, world_id)                  => request("PATCH", `/chats/${chat_id}/world`, { world_id }),
   bindCharacters: (id, body)                     => request("PATCH", `/chats/${id}/bind`, body),
   delete:  (id)                                  => request("DELETE", `/chats/${id}`),
@@ -27,7 +55,8 @@ export const chatsAPI = {
 export const memoriesAPI = {
   getById:       (id)                                                          => request("GET", `/memories/${id}`),
   add:           (memory)                                                      => request("POST",   "/memories/",                  memory),
-  query:         (chat_id, embedding, n_results, threshold, alpha, decay_rate) => request("POST",   "/memories/query",             { chat_id, embedding, n_results, threshold, alpha, decay_rate }),
+  query: (chat_id, embedding, n_results, threshold, alpha, decay_rate, query_text = null) =>
+  request("POST", "/memories/query", { chat_id, embedding, n_results, threshold, alpha, decay_rate, query_text }),
   update:        (id, summary, embedding, timestamp)                           => request("PUT",    `/memories/${id}`,             { summary, embedding, timestamp }),
   delete:        (id)                                                          => request("DELETE", `/memories/${id}`),
   clearChat:     (chat_id)                                                     => request("DELETE", `/memories/chat/${chat_id}`),
@@ -65,6 +94,7 @@ export const messagesAPI = {
   appendNode:   (chat_id, node)              => request("POST",   `/messages/${chat_id}/node`, node),
   updateNode:   (chat_id, node_id, updates)  => request("PATCH",  `/messages/${chat_id}/node/${node_id}`, updates),
   deleteNode:   (chat_id, node_id)           => request("DELETE", `/messages/${chat_id}/node/${node_id}`),
+  rewindTo:     (chat_id, node_id)           => request("DELETE", `/messages/${chat_id}/node/${node_id}/subtree`),
   setActiveChildren: (chat_id, activeChildren) => request("PATCH", `/messages/${chat_id}/active-children`, { activeChildren }),
  
   // Bulk — only for fork and full resync, NOT per-message saves
@@ -88,6 +118,7 @@ export const graphAPI = {
   getEntity:     (id)                             => request("GET",    `/graph/entities/${id}`),
   updateEntity:  (id, body)                       => request("PATCH",  `/graph/entities/${id}`,    body),
   deleteEntity:  (id)                             => request("DELETE", `/graph/entities/${id}`),
+  getStats:       ()                              => request("GET", "/graph/stats"),
 
   // Edges
   createEdge:    (edge)                           => request("POST",   "/graph/edges",             edge),
@@ -135,6 +166,11 @@ export const eventsAPI = {
   setDirectorConfig: (url, model) => request("POST", "/events/director-config", { url, model }),
   // SSE connection is handled directly via EventSource, not fetch
   connect: (chat_id, since, handlers) => {
+    const params = new URLSearchParams();
+    if (since) params.set("since", since);
+    const token = getApiToken();
+    if (token) params.set("token", token);
+    const qs = params.toString();
     const url = `${BASE_URL}/events/stream/${chat_id}${since ? `?since=${since}` : ""}`;
     const es  = new EventSource(url);
     Object.entries(handlers).forEach(([event, handler]) => {

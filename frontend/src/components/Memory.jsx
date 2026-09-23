@@ -34,6 +34,9 @@ export default function Memory({memories, memoryLog, config, addManualMemory, up
                         p({ children })  { return <p style={{ margin: "0 0 6px" }}>{children}</p>; },
                         ul({ children })  { return <ul style={{ margin: "0 0 6px", paddingLeft: 18 }}>{children}</ul>; },
                         li({ children })  { return <li style={{ marginBottom: 2 }}>{children}</li>; },
+                        h1({ children }) { return <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>{children}</h1>; },
+                        h2({ children }) { return <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 8px" }}>{children}</h2>; },
+                        h3({ children }) { return <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 8px" }}>{children}</h3>; },
                       }}
                     >
                       {activeWorld.llm_context}

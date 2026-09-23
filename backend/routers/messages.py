@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session
 from typing import Optional
-from backend.database.sqlite import (
+from database.sqlite import (
     get_session,
     add_message_node, update_message_node, delete_message_node,
     get_chat_message_nodes, clear_chat_messages, replace_chat_messages,
     set_active_children, get_active_children,
+    truncate_after_node,   # NEW
 )
 
 router = APIRouter()
@@ -72,6 +73,12 @@ def remove_node(chat_id: str, node_id: str, session: Session = Depends(get_sessi
     """Delete a single message node — single DELETE."""
     if not delete_message_node(session, chat_id, node_id):
         raise HTTPException(status_code=404, detail="Message node not found")
+    return {"ok": True}
+
+@router.delete("/{chat_id}/node/{node_id}/subtree")
+def rewind(chat_id: str, node_id: str, session: Session = Depends(get_session)):
+    """Rewind — delete node_id's entire descendant subtree, keep node_id itself."""
+    truncate_after_node(session, chat_id, node_id)
     return {"ok": True}
 
 @router.patch("/{chat_id}/active-children")

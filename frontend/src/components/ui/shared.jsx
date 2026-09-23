@@ -1,3 +1,4 @@
+import { useIsMobile } from "../../hooks/useIsMobile";
 export function Card({ children, style = {} }) {
   return (
     <div style={{ background: "var(--color-background-primary)", borderRadius: "var(--border-radius-lg)", border: "0.5px solid var(--color-border-tertiary)", padding: "14px 16px", ...style }}>
@@ -11,6 +12,18 @@ export function CardTitle({ children }) {
 }
 
 export function Row({ label, children }) {
+  const isMobile = useIsMobile()
+
+  if(isMobile){
+    return(
+      <div style={{display: "flex", flexDirection: "column"}}>
+      <div style={{ display: "flex",  gap: 12, flexDirection: "column", padding: "4px 6px" }}>
+        <label style={{ fontSize: 13, color: "var(--color-text-secondary)", minWidth: 210, flexShrink: 0 }}>{label}</label>
+      </div>
+      {children}
+      </div>
+    )
+  }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
       <label style={{ fontSize: 13, color: "var(--color-text-secondary)", minWidth: 210, flexShrink: 0 }}>{label}</label>

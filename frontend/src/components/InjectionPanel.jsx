@@ -113,7 +113,7 @@ export default function InjectionPanel({
       onMouseLeave={onMouseLeave}
       style={{
         position:             "fixed",
-        top:                  44,
+        top:                  44.35,
         right:                0,
         bottom:               0,
         width:                300,
