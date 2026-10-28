@@ -13,6 +13,7 @@ import { GlassRimDefs } from "./GlassBubble";
 import GlassBubble from "./GlassBubble";
 import RegenerateIcon from "./icons/RegenerateIcon";
 import { useIsMobile } from "../hooks/useIsMobile";
+import PersonaPicker from "./PersonaPicker";
 
 export default function Chat({chats,
         activeChatId,
@@ -47,10 +48,11 @@ export default function Chat({chats,
         branchMode,
         getSiblings,onExtractEntities,
         extracting, confirm, characters,
+        userCharId, onSelectUserPersona,
         groupChatMembers,
         isGroupChat,
         pendingNarrativeTurn, onInvokeNarrativeTurn, 
-        onSkipNarrativeTurn,
+        onSkipNarrativeTurn, modelName,
         }){
 
           const lastMsg         = messages[messages.length - 1];
@@ -103,7 +105,7 @@ export default function Chat({chats,
 
                       {/* Branch navigator — shown at fork points */}
                       {branchInfo && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, alignSelf: "flex-start" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, alignSelf: "flex-start", paddingTop: "15px" }}>
                           <button
                             onClick={() => switchBranch(branchInfo.parentId, -1)}
                             style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: 13, padding: "2px 4px" }}
@@ -166,7 +168,7 @@ export default function Chat({chats,
                         </div>
                       ) : (
                         <div className="chat-bubble"
-                          style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: m.role === "user" ? "flex-end" : "flex-start", position: "relative", padding: m.role === "user" ? "20px 0px 30px" : "2px 0px 5px" }}>
+                          style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: m.role === "user" ? "flex-end" : "flex-start", position: "relative", padding: m.role === "user" ? "20px 0px 30px" : branchInfo? "2px 0px 5px" : "25px 0px 5px" }}>
                           <GlassBubble style={{ padding: "10px 14px", borderRadius: "var(--border-radius-lg)", background: m.role === "user" ? "var(--color-bubble-user)" : "var(--color-bubble-model)", fontSize: 14, lineHeight: 1.65, color: m.role === "user" ? "var(--color-bubble-user-text)" : "var(--color-text-primary)", fontFamily: config?.style == "roleplay" ? "var(--font-serif)" : "var(--font-sans)" }}>
                             <ReactMarkdown
                               remarkPlugins={[remarkMath]}
@@ -201,7 +203,7 @@ export default function Chat({chats,
                             <span
                               onMouseEnter={() => onInjectionHover(m.injectedMemData ?? [], m.injectedLoreData ?? [], m.injectedInferenceData ?? [])}
                               onMouseLeave={onInjectionLeave}
-                              style={{ fontSize: 11, color: "var(--color-text-tertiary)", cursor: "default", padding: "2px 0" }}
+                              style={{ fontSize: 11, color: "var(--color-text-tertiary)", cursor: "default", padding: "2px 10px" }}
                             >
                               {[m.injectedMems > 0 && `${m.injectedMems} mem`, m.injectedLore > 0 && `${m.injectedLore} lore`].filter(Boolean).join(" · ")} injected
                             </span>
@@ -215,11 +217,11 @@ export default function Chat({chats,
                               display: "flex", gap: 4,
                               opacity: hasHover ? 0 : 0.85,
                               transition: "opacity 0.15s",
-                              position: "absolute", bottom: m.role === "user" ? -15 : -22,
+                              position: "absolute", bottom: m.role === "user" ? -2 : (m.injectedMems > 0 || m.injectedLore > 0) ? -22 : -26,
                               right: m.role === "user" ? 0 : "auto",
                               left: m.role === "user" ? "auto" : 0,
                               background: "var(--color-background-secondary)",
-                              border: "0.5px solid var(--color-border-tertiary)",
+                              border: "none",
                               borderRadius: "var(--border-radius-md)",
                               padding: "2px 4px", zIndex: 2,
                             }}
@@ -310,10 +312,11 @@ export default function Chat({chats,
                       width: "100%",
                       padding: "10px 12px 0px",
                       border: "none",
+                      minHeight: isMobile ? "0lh" : undefined,
                       outline: "none",
                       background: "transparent",
                       color: "var(--color-text-primary)",
-                      fontSize: 14,
+                      fontSize: isMobile ? 17 : 14,
                       fontFamily: "var(--font-sans)",
                       lineHeight: 1.5,
                       resize: "none",
@@ -322,6 +325,14 @@ export default function Chat({chats,
                   />
 
                   <div className="message-composer-actions">
+                    {config?.style === "roleplay" && characters?.length > 0 && (
+                      <PersonaPicker
+                        characters={characters}
+                        userCharId={userCharId}
+                        onSelect={onSelectUserPersona}
+                        disabled={loading}
+                      />
+                    )}
                     <button
                       onClick={sendMessage}
                       disabled={loading || (!input.trim() && !showContinuation)}
@@ -350,7 +361,7 @@ export default function Chat({chats,
                 </div>
               </div>
             </div>
-            <div style={{ padding: "0px 2px", background: "var(--color-background-primary)", display: "flex", justifyContent: "center", borderBottomLeftRadius:"var(--border-radius-md)",borderBottomRightRadius: "var(--border-radius-md)"}}>
+            <div style={{ maxWidth: 850, padding: "0px 2px", background: "var(--color-background-primary)", display: "flex", justifyContent: "center", borderBottomLeftRadius:"var(--border-radius-md)",borderBottomRightRadius: "var(--border-radius-md)"}}>
             {(config?.style === "none" || config?.style === "technical" || config?.style==="creative") && messages.length > 0 && (
               <div style={{ paddingTop: 1, paddingBottom: 1 }}>
                 <button
@@ -363,5 +374,8 @@ export default function Chat({chats,
               </div>
             )}
             </div>
+            <p style={{ textAlign: "center", fontSize: 10.5, color: "var(--color-text-tertiary)", margin: "4px 0 0", background: "transparent" }}>
+              {modelName || "The model"} is an AI and can make mistakes. Check important information.
+            </p>
           </div>
         )}

@@ -33,6 +33,44 @@ async function request(method, path, body) {
   return res.json();
 }
 
+// ――――― Connection ――――――――――――――――――――――――――――――――――――――――――――――――――――――
+export const connectionsAPI = {
+  getAll:     ()      => request("GET",    "/connections/"),
+  create:     (body)  => request("POST",   "/connections/", body),
+  update:     (id, body) => request("PATCH", `/connections/${id}`, body),
+  delete:     (id)    => request("DELETE", `/connections/${id}`),
+  setDefault: (id)    => request("PATCH",  `/connections/${id}/default`),
+  test: (id) => request("POST", `/connections/${id}/test`),
+};
+
+export async function* streamChatCompletion({ messages, temperature, maxTokens, extraParams }) {
+  const token = getApiToken();
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}/generation/chat`, {
+    method: "POST", headers,
+    body: JSON.stringify({ messages, temperature, max_tokens: maxTokens, extra_params: extraParams }),
+  });
+  if (!res.ok || !res.body) throw new Error(`Generation request failed (${res.status})`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      try { yield JSON.parse(line.slice(5).trim()); } catch { /* skip malformed chunk */ }
+    }
+  }
+}
+
 // ――― Authentication ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 export const authAPI = {
   getTokens:    ()      => request("GET",    "/auth/tokens/"),
@@ -47,6 +85,7 @@ export const chatsAPI = {
   update:  (id, title, updated_at)               => request("PATCH",  `/chats/${id}`,   { title, updated_at }),
   archive: (id, archived)                        => request("PATCH",  `/chats/${id}/archive`, { archived }),
   setWorld: (chat_id, world_id)                  => request("PATCH", `/chats/${chat_id}/world`, { world_id }),
+  setLorebooks: (chat_id, lorebook_ids)          => request("PATCH", `/chats/${chat_id}/lorebooks`, { lorebook_ids}),
   bindCharacters: (id, body)                     => request("PATCH", `/chats/${id}/bind`, body),
   delete:  (id)                                  => request("DELETE", `/chats/${id}`),
 };
@@ -55,8 +94,8 @@ export const chatsAPI = {
 export const memoriesAPI = {
   getById:       (id)                                                          => request("GET", `/memories/${id}`),
   add:           (memory)                                                      => request("POST",   "/memories/",                  memory),
-  query: (chat_id, embedding, n_results, threshold, alpha, decay_rate, query_text = null) =>
-  request("POST", "/memories/query", { chat_id, embedding, n_results, threshold, alpha, decay_rate, query_text }),
+  query: (chat_id, embedding, n_results, threshold, alpha, decay_rate, world_offset_minutes = null, query_text = null) =>
+    request("POST", "/memories/query", { chat_id, embedding, n_results, threshold, alpha, decay_rate, world_offset_minutes, query_text }),
   update:        (id, summary, embedding, timestamp)                           => request("PUT",    `/memories/${id}`,             { summary, embedding, timestamp }),
   delete:        (id)                                                          => request("DELETE", `/memories/${id}`),
   clearChat:     (chat_id)                                                     => request("DELETE", `/memories/chat/${chat_id}`),
@@ -68,15 +107,24 @@ export const memoriesAPI = {
 };
 
 // ─── Lorebook ─────────────────────────────────────────────────────────────────
+export const lorebooksAPI ={
+  getAll: ()         => request("GET", "/lorebooks/"),
+  create: (body)     => request("POST", "/lorebooks/", body),
+  update: (id, body) => request("PATCH", `/lorebooks/${id}`, body),
+  delete: (id)       => request("DELETE", `/lorebooks/${id}`),
+}
+
 export const lorebookAPI = {
-  getById:   (id)                              => request("GET", `/lorebook/${id}`),
-  getAll:    ()                                => request("GET",    "/lorebook/"),
-  add:       (entry)                           => request("POST",   "/lorebook/",          entry),
-  query:     (embedding, n_results, threshold) => request("POST",   "/lorebook/query",     { embedding, n_results, threshold }),
-  update:    (id, entry)                       => request("PUT",    `/lorebook/${id}`,     entry),
-  delete:    (id)                              => request("DELETE", `/lorebook/${id}`),
-  getPinned: ()                                => request("GET",    "/lorebook/pinned"),
-  pin:       (id, pinned)                      => request("PATCH",  `/lorebook/${id}/pin`, { pinned }),
+  getById:   (id)                                                   => request("GET", `/lorebook/${id}`),
+  getAll:    ()                                                     => request("GET",    "/lorebook/"),
+  add:       (entry)                                                => request("POST",   "/lorebook/",          entry),
+  forCharacter:      (char_id)                                      => request("GET", `/lorebooks/by-character/${char_id}`),
+  setCharacterBooks: (char_id, ids)                                 => request("PUT", `/lorebooks/by-character/${char_id}`, { lorebook_ids: ids }),
+  query:     (embedding, n_results, threshold, lorebook_ids = null) => request("POST",   "/lorebook/query",     { embedding, n_results, threshold, lorebook_ids }),
+  update:    (id, entry)                                            => request("PUT",    `/lorebook/${id}`,     entry),
+  delete:    (id)                                                   => request("DELETE", `/lorebook/${id}`),
+  getPinned: (lorebook_ids = null)                                  => request("GET",    `/lorebook/pinned${lorebook_ids?.length ? `?lorebook_ids=${lorebook_ids.join(",")}` : ""}`),
+  pin:       (id, pinned)                                           => request("PATCH",  `/lorebook/${id}/pin`, { pinned }),
 };
 
 // ─── Presets ──────────────────────────────────────────────────────────────────
@@ -114,7 +162,7 @@ export const clustersAPI = {
 export const graphAPI = {
   // Entities
   createEntity:  (entity)                         => request("POST",   "/graph/entities",          entity),
-  getEntities:   (chat_id, preset_id, type)        => request("GET",    `/graph/entities?${new URLSearchParams({ ...(chat_id && { chat_id }), ...(preset_id && { preset_id }), ...(type && { type }) })}`),
+  getEntities:   (chat_id, preset_id, type)       => request("GET",    `/graph/entities?${new URLSearchParams({ ...(chat_id && { chat_id }), ...(preset_id && { preset_id }), ...(type && { type }) })}`),
   getEntity:     (id)                             => request("GET",    `/graph/entities/${id}`),
   updateEntity:  (id, body)                       => request("PATCH",  `/graph/entities/${id}`,    body),
   deleteEntity:  (id)                             => request("DELETE", `/graph/entities/${id}`),
@@ -131,6 +179,7 @@ export const graphAPI = {
   getCharacters:     (preset_id)                  => request("GET",    `/graph/characters?${preset_id ? `preset_id=${preset_id}` : ""}`),
   getCharacter:      (id)                         => request("GET",    `/graph/characters/${id}`),
   activateCharacter: (id, is_user)                => request("PATCH",  `/graph/characters/${id}/activate?is_user=${!!is_user}`),
+  clearCharacter: (preset_id, is_user)            => request("PATCH", `/graph/characters/clear?${new URLSearchParams({ ...(preset_id && { preset_id }), is_user: !!is_user })}`),
 
   // Template vars
   setTemplateVar:    (body)                       => request("POST",   "/graph/template-vars",     body),

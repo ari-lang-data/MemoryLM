@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc" preserveAspectRatio="xMidYMid slice">
+  <title id="title">The Unwritten World</title>
+  <desc id="desc">A stylised, atmospheric twilight landscape with layered mountains, a distant luminous horizon, ambiguous ancient structures, and a winding reflective path.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0.12" y2="1">
+      <stop offset="0" stop-color="#101b2b"/>
+      <stop offset="0.37" stop-color="#263549"/>
+      <stop offset="0.72" stop-color="#776c69"/>
+      <stop offset="1" stop-color="#d2a77b"/>
+    </linearGradient>
+    <radialGradient id="horizonGlow" cx="72%" cy="39%" r="53%">
+      <stop offset="0" stop-color="#f3c78c" stop-opacity=".62"/>
+      <stop offset=".28" stop-color="#d6a57c" stop-opacity=".25"/>
+      <stop offset=".7" stop-color="#8c8290" stop-opacity=".06"/>
+      <stop offset="1" stop-color="#8c8290" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sunDisc" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#fae1b0"/>
+      <stop offset="1" stop-color="#d5a16f"/>
+    </linearGradient>
+    <linearGradient id="farRidge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#737783"/>
+      <stop offset="1" stop-color="#4c5a6b"/>
+    </linearGradient>
+    <linearGradient id="midRidge" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#475365"/>
+      <stop offset="1" stop-color="#29394b"/>
+    </linearGradient>
+    <linearGradient id="nearRidge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#273648"/>
+      <stop offset="1" stop-color="#142535"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b99b83" stop-opacity=".52"/>
+      <stop offset=".32" stop-color="#78909a" stop-opacity=".34"/>
+      <stop offset="1" stop-color="#1c3444" stop-opacity=".12"/>
+    </linearGradient>
+    <linearGradient id="foreground" x1="0" y1="0" x2="0.1" y2="1">
+      <stop offset="0" stop-color="#1c2c3c"/>
+      <stop offset="1" stop-color="#0d1a28"/>
+    </linearGradient>
+    <linearGradient id="stone" x1="0" y1="0" x2="1" y2="0.1">
+      <stop offset="0" stop-color="#1b2b3a"/>
+      <stop offset=".55" stop-color="#33404d"/>
+      <stop offset="1" stop-color="#172938"/>
+    </linearGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="27"/>
+    </filter>
+    <filter id="haze" x="-10%" y="-30%" width="120%" height="160%">
+      <feGaussianBlur stdDeviation="15"/>
+    </filter>
+    <pattern id="grainLines" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M0 12H20 M29 34H48 M6 45H13" fill="none" stroke="#f4d4a5" stroke-opacity=".09" stroke-width="1"/>
+    </pattern>
+    <clipPath id="sceneClip"><rect width="1600" height="900"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#sceneClip)">
+    <!-- The sky is deliberately broad and quiet, so the glass panel can remain the focus. -->
+    <rect width="1600" height="900" fill="url(#sky)"/>
+    <rect width="1600" height="900" fill="url(#horizonGlow)"/>
+
+    <!-- Diffuse atmospheric bands -->
+    <ellipse cx="1110" cy="400" rx="540" ry="110" fill="#dfb58f" opacity=".12" filter="url(#haze)"/>
+    <path d="M0 357 C220 330 370 374 575 349 S946 323 1140 355 S1416 344 1600 321 L1600 433 C1370 416 1200 438 1012 416 S640 434 420 409 S154 427 0 409Z" fill="#c1a3a0" opacity=".08" filter="url(#haze)"/>
+    <path d="M0 256 C165 235 251 267 386 248 S622 254 728 236 S961 246 1090 221 S1378 237 1600 204" fill="none" stroke="#d8c2b3" stroke-opacity=".13" stroke-width="2"/>
+    <path d="M0 281 C200 258 303 287 479 269 S760 284 904 253 S1263 270 1600 236" fill="none" stroke="#d8c2b3" stroke-opacity=".08" stroke-width="1.5"/>
+
+    <!-- A pale, almost eclipsed sun: a universal rather than world-specific focal point. -->
+    <circle cx="1177" cy="257" r="92" fill="#f0c899" opacity=".19" filter="url(#softGlow)"/>
+    <circle cx="1177" cy="257" r="57" fill="url(#sunDisc)" opacity=".88"/>
+    <circle cx="1177" cy="257" r="71" fill="none" stroke="#f2d5af" stroke-opacity=".3" stroke-width="1.5"/>
+    <path d="M1130 260 C1154 255 1190 262 1222 256" fill="none" stroke="#ae8a75" stroke-opacity=".32" stroke-width="1.5"/>
+    <path d="M1140 278 C1166 273 1191 281 1213 276" fill="none" stroke="#ae8a75" stroke-opacity=".26" stroke-width="1"/>
+
+    <!-- Sparse stars / distant glints -->
+    <g fill="#f4dfc2">
+      <circle cx="179" cy="121" r="1.5" opacity=".6"/><circle cx="337" cy="184" r="1" opacity=".55"/>
+      <circle cx="521" cy="95" r="1.4" opacity=".45"/><circle cx="713" cy="156" r="1" opacity=".5"/>
+      <circle cx="870" cy="91" r="1.5" opacity=".48"/><circle cx="1018" cy="154" r="1" opacity=".55"/>
+      <circle cx="1328" cy="104" r="1.5" opacity=".5"/><circle cx="1479" cy="184" r="1" opacity=".55"/>
+      <circle cx="1419" cy="87" r="1.2" opacity=".45"/><circle cx="260" cy="227" r="1" opacity=".35"/>
+    </g>
+
+    <!-- Farthest ridgeline -->
+    <path d="M0 503 L76 465 145 481 230 420 292 452 362 399 432 447 515 411 600 451 681 414 747 446 829 394 902 427 980 389 1049 418 1118 381 1197 423 1281 390 1350 431 1433 387 1501 423 1600 374 L1600 655 0 655Z" fill="url(#farRidge)" opacity=".72"/>
+    <path d="M230 420 L292 452 362 399 432 447 389 429 363 416 300 468 258 447Z" fill="#9c9da0" opacity=".2"/>
+    <path d="M747 446 L829 394 902 427 860 415 832 409 773 457Z" fill="#c0a99e" opacity=".19"/>
+    <path d="M1118 381 L1197 423 1281 390 1350 431 1295 411 1277 409 1203 446 1152 409Z" fill="#d7b59c" opacity=".17"/>
+
+    <!-- Distance softened by a horizontal veil -->
+    <path d="M0 502 C220 481 389 521 591 496 S978 504 1164 487 S1430 503 1600 472 L1600 592 L0 592Z" fill="#a6a0a1" opacity=".15" filter="url(#haze)"/>
+
+    <!-- Ambiguous monolithic architecture in the distance -->
+    <g opacity=".6" fill="#303d4e">
+      <path d="M313 507 L321 416 L332 403 L347 407 L355 507Z"/>
+      <path d="M316 420 L332 402 L348 407 L348 416 L331 411 L323 424Z"/>
+      <path d="M382 511 L390 449 L400 439 L412 445 L420 511Z"/>
+      <path d="M387 452 L400 438 L413 445 L412 452 L400 447 L394 457Z"/>
+      <path d="M1376 505 L1387 387 L1401 372 L1414 386 L1426 505Z"/>
+      <path d="M1384 393 L1401 372 L1415 386 L1413 394 L1401 384 L1391 400Z"/>
+      <path d="M1453 507 L1460 444 L1471 433 L1484 440 L1492 507Z"/>
+    </g>
+    <g fill="none" stroke="#d6b99e" stroke-width="1.2" stroke-opacity=".26">
+      <path d="M336 409V499 M401 447V501 M1401 383V499 M1472 441V501"/>
+      <path d="M317 477H354 M389 485H413 M1389 463H1414 M1463 475H1481"/>
+    </g>
+
+    <!-- Mid-ground peaks frame, rather than fill, the centre. -->
+    <path d="M0 581 L95 526 175 549 282 480 358 530 445 474 535 529 619 493 706 534 793 467 884 520 978 482 1069 528 1159 484 1251 535 1346 479 1430 520 1519 467 1600 511 L1600 727 0 727Z" fill="url(#midRidge)"/>
+    <path d="M95 526 L175 549 282 480 358 530 309 511 284 497 194 567 144 546Z" fill="#9aa0a3" opacity=".2"/>
+    <path d="M445 474 L535 529 619 493 706 534 651 516 619 508 538 551 493 514Z" fill="#b5aaa6" opacity=".12"/>
+    <path d="M793 467 L884 520 978 482 1069 528 1014 508 979 497 899 541 845 505Z" fill="#d2b7a4" opacity=".16"/>
+    <path d="M1159 484 L1251 535 1346 479 1430 520 1387 504 1349 496 1270 555 1211 514Z" fill="#b6a5a2" opacity=".14"/>
+
+    <!-- A broken arc suggests an old passage without declaring what it belongs to. -->
+    <g opacity=".68">
+      <path d="M585 588 L591 495 C595 457 621 431 650 431 C679 431 705 458 709 495 L715 588 L694 588 L689 499 C686 474 671 455 650 455 C629 455 614 474 611 499 L606 588Z" fill="url(#stone)"/>
+      <path d="M589 508 L610 508 M688 508 L711 508" stroke="#c6a78c" stroke-opacity=".28" stroke-width="2"/>
+      <path d="M600 547 L607 547 M695 547 L704 547" stroke="#d8bb9a" stroke-opacity=".23" stroke-width="1.5"/>
+      <path d="M650 456 V492" stroke="#d8bb9a" stroke-opacity=".14" stroke-width="1"/>
+    </g>
+
+    <!-- Lower valley and a ribbon of reflective water/path leading to the horizon -->
+    <path d="M0 637 C178 618 320 648 473 625 S742 626 870 612 S1124 625 1266 609 S1477 625 1600 599 L1600 900 L0 900Z" fill="#253849" opacity=".7"/>
+    <path d="M919 608 C908 648 873 675 877 704 C881 731 928 750 927 778 C926 815 866 850 838 900 L1118 900 C1090 867 1053 835 1058 804 C1063 770 1014 739 1007 707 C1000 670 974 641 962 608Z" fill="url(#water)" opacity=".92"/>
+    <path d="M927 620 C912 657 890 679 894 703 C900 730 949 749 947 778 C945 818 894 853 867 900" fill="none" stroke="#f0c79a" stroke-opacity=".46" stroke-width="2.3"/>
+    <path d="M950 624 C966 663 987 681 986 708 C985 740 1032 761 1032 794 C1032 834 1073 867 1092 900" fill="none" stroke="#e8c5a1" stroke-opacity=".2" stroke-width="1.4"/>
+    <g fill="none" stroke="#f2d0a8" stroke-linecap="round">
+      <path d="M913 652 Q934 650 953 657" stroke-width="2" stroke-opacity=".32"/>
+      <path d="M897 679 Q930 673 965 684" stroke-width="1.6" stroke-opacity=".29"/>
+      <path d="M891 708 Q929 701 973 716" stroke-width="1.5" stroke-opacity=".24"/>
+      <path d="M901 742 Q943 735 992 750" stroke-width="1.4" stroke-opacity=".2"/>
+      <path d="M903 781 Q946 775 1004 791" stroke-width="1.2" stroke-opacity=".18"/>
+      <path d="M883 824 Q931 819 990 834" stroke-width="1.2" stroke-opacity=".15"/>
+    </g>
+
+    <!-- Foreground banks create a natural vignette and give the scene depth. -->
+    <path d="M0 629 C100 616 185 646 267 660 C345 675 400 696 485 687 C559 679 610 714 650 754 C591 787 537 843 488 900 L0 900Z" fill="url(#foreground)"/>
+    <path d="M1600 615 C1494 622 1431 647 1367 665 C1303 682 1247 685 1192 715 C1147 739 1104 779 1083 819 C1118 847 1161 875 1184 900 L1600 900Z" fill="url(#foreground)"/>
+    <path d="M0 653 C112 642 174 676 267 686 S405 726 471 733" fill="none" stroke="#8b8b8a" stroke-opacity=".24" stroke-width="2"/>
+    <path d="M1600 643 C1497 646 1452 679 1364 691 S1237 737 1171 773" fill="none" stroke="#b08e78" stroke-opacity=".2" stroke-width="2"/>
+
+    <!-- Silhouetted, stylised plants and stones; kept at the extreme edges. -->
+    <g fill="#101e2b">
+      <path d="M70 900 Q77 840 63 797 Q84 821 88 849 Q95 798 120 770 Q113 818 105 849 Q130 816 149 812 Q124 847 110 876 L128 900Z"/>
+      <path d="M198 900 Q191 856 210 825 Q207 862 220 879 Q235 836 260 827 Q239 868 235 900Z"/>
+      <path d="M1547 900 Q1530 851 1550 812 Q1549 851 1562 869 Q1577 828 1599 809 L1600 900Z"/>
+      <path d="M1437 900 Q1457 857 1447 828 Q1470 849 1473 878 Q1492 851 1513 845 Q1492 877 1484 900Z"/>
+    </g>
+    <g fill="#7d817f" opacity=".35">
+      <ellipse cx="357" cy="773" rx="37" ry="10" transform="rotate(-18 357 773)"/>
+      <ellipse cx="1269" cy="772" rx="43" ry="12" transform="rotate(16 1269 772)"/>
+      <ellipse cx="1345" cy="741" rx="20" ry="7" transform="rotate(-11 1345 741)"/>
+    </g>
+
+    <!-- A handful of firefly-like glints add scale without visual noise. -->
+    <g fill="#f2d1a4">
+      <circle cx="226" cy="608" r="2" opacity=".6"/><circle cx="251" cy="625" r="1.2" opacity=".45"/>
+      <circle cx="1288" cy="593" r="1.8" opacity=".55"/><circle cx="1313" cy="610" r="1.1" opacity=".4"/>
+      <circle cx="1075" cy="566" r="1.4" opacity=".46"/><circle cx="537" cy="585" r="1.3" opacity=".4"/>
+    </g>
+
+    <!-- Colour unify / edge falloff, kept very gentle under a foreground card. -->
+    <rect width="1600" height="900" fill="url(#grainLines)" opacity=".35"/>
+    <rect width="1600" height="900" fill="#101a27" opacity=".08"/>
+    <rect width="1600" height="900" fill="none" stroke="#0b1723" stroke-width="64" stroke-opacity=".19"/>
+  </g>
+</svg>

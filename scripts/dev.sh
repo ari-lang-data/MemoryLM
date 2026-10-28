@@ -14,7 +14,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # ── Backend ────────────────────────────────────────────────────────
-cd "$ROOT"
+cd "$ROOT/backend"
 source venv/bin/activate
 set -a; source .env; set +a
 HOST="${TS_HOST:-127.0.0.1}"
@@ -24,7 +24,7 @@ if [[ -n "${TS_CERT_KEY:-}" && -n "${TS_CERT_CRT:-}" ]]; then
   uvicorn main:app --host "$HOST" --port "$PORT" --reload \
     --ssl-keyfile "$TS_CERT_KEY" --ssl-certfile "$TS_CERT_CRT" &
 else
-  uvicorn backend.main:app --host "$HOST" --port "$PORT" --reload &
+  uvicorn main:app --host "$HOST" --port "$PORT" --reload &
 fi
 BACKEND_PID=$!
 deactivate

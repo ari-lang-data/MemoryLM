@@ -167,7 +167,7 @@ def get_characters(preset_id: Optional[str] = None):
         rows = execute(
             """SELECT e.*, c.appearance, c.behaviour, c.speech_pattern, c.background,
                       c.is_active_char, c.is_user_char,
-                      c.narrative_alias, c.address_formal, c.address_informal
+                      c.narrative_alias, c.address_formal, c.address_informal, c.bias
                FROM entities e JOIN character_cards c ON e.id = c.id
                WHERE c.preset_id = ?""",
             [preset_id]
@@ -176,7 +176,7 @@ def get_characters(preset_id: Optional[str] = None):
         rows = execute(
             """SELECT e.*, c.appearance, c.behaviour, c.speech_pattern, c.background,
                       c.is_active_char, c.is_user_char,
-                      c.narrative_alias, c.address_formal, c.address_informal
+                      c.narrative_alias, c.address_formal, c.address_informal, c.bias
                FROM entities e JOIN character_cards c ON e.id = c.id"""
         )
     return [dict(zip(CHARACTER_COLS, row)) for row in rows]
@@ -186,7 +186,7 @@ def get_character(entity_id: str):
     rows = execute(
         """SELECT e.*, c.appearance, c.behaviour, c.speech_pattern, c.background,
                   c.is_active_char, c.is_user_char,
-                  c.narrative_alias, c.address_formal, c.address_informal
+                  c.narrative_alias, c.address_formal, c.address_informal, c.bias
            FROM entities e JOIN character_cards c ON e.id = c.id
            WHERE e.id = ?""",
         [entity_id]
@@ -206,6 +206,15 @@ def set_active_character(entity_id: str, is_user: bool = False):
         else:
             execute("UPDATE character_cards SET is_active_char = FALSE WHERE preset_id = ?", [preset_id])
             execute("UPDATE character_cards SET is_active_char = TRUE  WHERE id = ?",        [entity_id])
+    return SuccessResponse()
+
+@router.patch("/characters/clear", response_model=SuccessResponse)
+def clear_active_character(preset_id: Optional[str] = None, is_user: bool = False):
+    column = "is_user_char" if is_user else "is_active_char"   # fixed choice, never user input
+    if preset_id:
+        execute(f"UPDATE character_cards SET {column} = FALSE WHERE preset_id = ?", [preset_id])
+    else:
+        execute(f"UPDATE character_cards SET {column} = FALSE")
     return SuccessResponse()
 
 # ─── Template variable routes ──────────────────────────────────────────────────

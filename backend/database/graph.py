@@ -162,3 +162,8 @@ def executemany(query: str, params_list: list):
     else:
         conn.executemany(query, params_list)
         conn.commit()
+
+def purge_entity(entity_id: str):
+    execute("DELETE FROM edges WHERE source_id = ? OR target_id = ?", [entity_id, entity_id])
+    execute("DELETE FROM template_vars WHERE entity_id =?", [entity_id])
+    execute("DELETE FROM entities WHERE id = ?", [entity_id])

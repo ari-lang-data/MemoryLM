@@ -12,37 +12,47 @@ export default function Memory({memories, memoryLog, config, addManualMemory, up
 
             {/* World setting card — only when the active chat has a world */}
             {activeWorld && (
-              <div style={{
-                background:           `rgba(var(--glass-rgb), ${bgAlpha})`,
-                backdropFilter:       `blur(${blurPx}px) saturate(${saturate})`,
-                WebkitBackdropFilter: `blur(${blurPx}px) saturate(${saturate})`,
-                border:               "0.5px solid var(--color-border-tertiary)",
-                borderRadius:         "var(--border-radius-lg)",
-                padding:              "14px 18px",
-                display:              "flex",
-                flexDirection:        "column",
-                gap:                  6,
-              }}>
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>{activeWorld.name}</p>
-                  {worldTime && <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>{worldTime}</span>}
-                </div>
-                {activeWorld.llm_context && (
-                  <div style={{ fontSize: 12, lineHeight: 1.6, color: "var(--color-text-secondary)" }}>
-                    <ReactMarkdown
-                      components={{
-                        p({ children })  { return <p style={{ margin: "0 0 6px" }}>{children}</p>; },
-                        ul({ children })  { return <ul style={{ margin: "0 0 6px", paddingLeft: 18 }}>{children}</ul>; },
-                        li({ children })  { return <li style={{ marginBottom: 2 }}>{children}</li>; },
-                        h1({ children }) { return <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>{children}</h1>; },
-                        h2({ children }) { return <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 8px" }}>{children}</h2>; },
-                        h3({ children }) { return <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 8px" }}>{children}</h3>; },
-                      }}
-                    >
-                      {activeWorld.llm_context}
-                    </ReactMarkdown>
+              <div className="world-stage">
+                <img
+                  className="world-stage__scene"
+                  src="/memorylm_world_scene.svg"
+                  alt=""
+                  aria-hidden="true"
+                />
+
+                <div className="world-stage__atmosphere" aria-hidden="true" />
+                <div className="world-stage__content"  style={{
+                  background:           `rgba(var(--glass-rgb), ${bgAlpha})`,
+                  backdropFilter:       `blur(${blurPx}px) saturate(${saturate})`,
+                  WebkitBackdropFilter: `blur(${blurPx}px) saturate(${saturate})`,
+                  border:               "0.5px solid var(--color-border-tertiary)",
+                  borderRadius:         "var(--border-radius-lg)",
+                  padding:              "14px 18px",
+                  display:              "flex",
+                  flexDirection:        "column",
+                  gap:                  6,
+                }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                    <p style={{ margin: 0, fontSize: 17, fontWeight: 600, color: "var(--color-text-primary)" , fontFamily: "Playfair Display"}}>{activeWorld.name}</p>
+                    {worldTime && <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>{worldTime}</span>}
                   </div>
-                )}
+                  {activeWorld.llm_context && (
+                    <div style={{ fontSize: 12, lineHeight: 1.6, color: "var(--color-text-secondary)" }}>
+                      <ReactMarkdown
+                        components={{
+                          p({ children })  { return <p style={{ margin: "0 0 14px" }}>{children}</p>; },
+                          ul({ children })  { return <ul style={{ margin: "0 0 6px", paddingLeft: 18 }}>{children}</ul>; },
+                          li({ children })  { return <li style={{ marginBottom: 2 }}>{children}</li>; },
+                          h1({ children }) { return <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>{children}</h1>; },
+                          h2({ children }) { return <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 8px" }}>{children}</h2>; },
+                          h3({ children }) { return <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 8px" }}>{children}</h3>; },
+                        }}
+                      >
+                        {activeWorld.llm_context}
+                      </ReactMarkdown>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

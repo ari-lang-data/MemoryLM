@@ -1,6 +1,8 @@
 venv/
+backend/venv/
 .env
 chroma_data/
+backend/chroma_data/
 __pycache__/
 backend/__pycache__/
 backend/database/__pycache__/

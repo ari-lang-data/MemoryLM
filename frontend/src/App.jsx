@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { memoriesAPI, lorebookAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI, episodicAPI, eventsAPI, worldsAPI } from "./lib/api";
+import { memoriesAPI, lorebookAPI, lorebooksAPI, connectionsAPI, chatsAPI, presetsAPI, messagesAPI, clustersAPI, graphAPI, episodicAPI, eventsAPI, worldsAPI } from "./lib/api";
 
 import useEmbedder from "./hooks/useEmbedder";
 import { useEventQueue } from "./hooks/useEventQueue";
@@ -45,22 +45,23 @@ import {inputStyle} from "./lib/constants";
   import GraphPanel from "./components/GraphPanel";
   import GroupChatSetupModal from "./components/GroupChatSetupModal";
   import KeyboardShortcutsModal from "./components/KeyboardShortcutsModal";
+  import NewChatModal from "./components/NewChatModal";
   import WorldCreatorModal from "./components/WorldCreatorModal";
-  import WorldSelectorModal from "./components/WorldSelectorModal";
   import CharacterProfileCard from "./components/CharacterProfileCard";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [powerUser,     setPowerUser]     = useState(() => localStorage.getItem("memorylm_power_user") === "true");
-  const [directorUrl,   setDirectorUrl]   = useState(() => localStorage.getItem("memorylm_director_url")   ?? "http://localhost:1234");
-  const [directorModel, setDirectorModel] = useState(() => localStorage.getItem("memorylm_director_model") ?? "");
+  const [powerUser,     setPowerUser]       = useState(() => localStorage.getItem("memorylm_power_user") === "true");
+  const [directorUrl,   setDirectorUrl]     = useState(() => localStorage.getItem("memorylm_director_url")   ?? "http://localhost:1234");
+  const [directorModel, setDirectorModel]   = useState(() => localStorage.getItem("memorylm_director_model") ?? "");
   const [chats,          setChats]          = useState([]);
-  const [memories, setMemories] = useState([]);
+  const [memories, setMemories]             = useState([]);
   const [editingMessage, setEditingMessage] = useState(null); // holds { index, draft }
   const [activeChatId,   setActiveChatId]   = useState(null);
+  const [lorebooks, setLorebooks]           = useState([]);
   const [lorebook,       setLorebook]       = useState([]);
-  const [loreEdgePanel, setLoreEdgePanel] = useState(null); // { entry, edges }
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loreEdgePanel, setLoreEdgePanel]   = useState(null); // { entry, edges }
+  const [sidebarOpen, setSidebarOpen]       = useState(false);
   const [input,          setInput]          = useState("");
   const [loading,        setLoading]        = useState(false);
   const [activePanel,    setActivePanel]    = useState("chat");
@@ -73,6 +74,7 @@ export default function App() {
   const [worldSelectorOpen, setWorldSelectorOpen] = useState(false);
   const [worldsModalOpen, setWorldsModalOpen] = useState(false);
   const [worldsCache, setWorldsCache] = useState({});
+  const [newChatFlow, setNewChatFlow] = useState(null);   // { step, lorebookIds, suggestedIds, usesWorld }
   const [pendingChatCreation, setPendingChatCreation] = useState(false);
   const [lmStudioUrl,    setLmStudioUrl]    = useState(DEFAULT_LM_STUDIO_URL);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -93,6 +95,7 @@ export default function App() {
   const [nodes,          setNodes]          = useState([]);
   const [activeChildren, setActiveChildren] = useState({});
   const [injectionPanel, setInjectionPanel] = useState({ visible: false, memData: [], loreData: [], inferenceData: [] });
+  const [defaultModelName, setDefaultModelName] = useState("");
   const [config, setConfig] = useState({
     chunkEvery: 4, topK: 4, threshold: 0.35, temperature: 0.7, repetitionPenalty: 1.0,
     autoSummarise: true, dedupMode: "merge", dedupThreshold: DEDUP_THRESHOLD, modelName: "", alpha: 0.7, decayRate: 0.01,
@@ -112,9 +115,19 @@ export default function App() {
 
   const activeChat = chats.find(c => c.id === activeChatId)?? chats[0];
   const messages = useMemo(() => getActivePath(nodes, activeChildren), [nodes, activeChildren]);
+  const lorebookEntryCounts = useMemo(() => {
+    const c = {};
+    lorebook.forEach(e => { if (e.lorebook_id) c[e.lorebook_id] = (c[e.lorebook_id] ?? 0) + 1; });
+    return c;
+  }, [lorebook]);
 
   useEffect(() => { configRef.current  = config;      }, [config]);
   useEffect(() => { lmUrlRef.current   = lmStudioUrl; }, [lmStudioUrl]);
+  useEffect(() => {
+                    connectionsAPI.getAll()
+                      .then(cs => setDefaultModelName(cs.find(c => c.is_default)?.model_name ?? (cs.length === 1 ? cs[0].model_name : "")))
+                      .catch(() => {});
+                  }, [settingsOpen]);   // refetches when Settings closes, so changes show straight away
   useEffect(() => { localStorage.setItem("memorylm_power_user",     powerUser);    }, [powerUser]);
   useEffect(() => { localStorage.setItem("memorylm_director_url",   directorUrl);  }, [directorUrl]);
   useEffect(() => { localStorage.setItem("memorylm_director_model", directorModel);}, [directorModel]);
@@ -178,10 +191,11 @@ export default function App() {
     (async () => {
       await migrateMessagesFromLocalStorage();
       try {
-        const [savedChats, savedPresets, savedLorebook] = await Promise.all([
+        const [savedChats, savedPresets, savedLorebook, savedLorebooks] = await Promise.all([
           chatsAPI.getAll(),
           presetsAPI.getAll(),
           lorebookAPI.getAll(),
+          lorebooksAPI.getAll(),
         ]);
 
         const savedActiveChat   = loadStorage(STORAGE_KEYS.activeChat);
@@ -198,6 +212,7 @@ export default function App() {
 
         // ── Lorebook ───────────────────────────────────────────────────────
         if (savedLorebook?.length) setLorebook(savedLorebook);
+        setLorebooks(savedLorebooks ?? []);
 
         // ── Presets ────────────────────────────────────────────────────────
         if (savedPresets?.length) {
@@ -262,7 +277,7 @@ export default function App() {
             if (bindings.chat_type === "group" && bindings.members?.length) {
               setGroupChatMembers(bindings.members);
             }
-            ensureWorldCached(activeChatResolved.world_id)
+            ensureWorldCached(activeChat.world_id)
           }
         }
 
@@ -419,12 +434,66 @@ export default function App() {
     });
   }
 
-  function handleNewChatClick() {
-    if (config?.style === "roleplay" && activeCharId) {
-      setWorldSelectorOpen(true);
-    } else {
-      createNewChat();
+  function handleNewChatClick() { beginNewChat(); }
+
+  function beginNewChat({ preselected = [], withCharacter = !!activeCharId } = {}) {
+    const showLorebooks = ["roleplay", "creative"].includes(config?.style) && lorebooks.length > 0;
+    const showWorld     = config?.style === "roleplay" && withCharacter;
+    if (showLorebooks || showWorld) setNewChatFlow({ suggestedIds: preselected, showLorebooks, showWorld });
+    else finishNewChat({ lorebookIds: [], worldId: null });
+  }
+
+  async function finishNewChat({ lorebookIds, worldId }) {
+    setNewChatFlow(null);
+    const newChatId = await createNewChat();
+    if (worldId) {
+      await chatsAPI.setWorld(newChatId, worldId);
+      setChats(prev => prev.map(c => c.id === newChatId ? { ...c, world_id: worldId } : c));
+      ensureWorldCached(worldId);
     }
+    if (lorebookIds.length) {
+      await chatsAPI.setLorebooks(newChatId, lorebookIds);
+      setChats(prev => prev.map(c => c.id === newChatId ? { ...c, lorebook_ids: lorebookIds } : c));
+    }
+  }
+
+  async function selectCharacter(id, isUser = false) {
+    if (id) await graphAPI.activateCharacter(id, isUser);
+    else    await graphAPI.clearCharacter(activePreset, isUser);
+
+    await graphAPI.setTemplateVar({
+      var_name:  isUser ? "usr" : "char",
+      entity_id: id ?? null,
+      preset_id: activePreset,
+    });
+    const [updated, updatedVars] = await Promise.all([
+      graphAPI.getCharacters(activePreset),
+      graphAPI.getTemplateVars(activePreset),
+    ]);
+    setCharacters(updated ?? []);
+    setTemplateVars(updatedVars ?? []);
+    if (isUser) setUserCharId(id ?? null);
+    else        setActiveCharId(id ?? null);
+  }
+
+  async function selectUserPersona(id) {
+    await selectCharacter(id, true);
+    // Bindings are otherwise only written on a chat's first message, so persist
+    // mid-chat changes or the persona reverts when the chat is reopened.
+    const b = chats.find(c => c.id === activeChatId)?.character_bindings;
+    if (b && Object.keys(b).length > 0) {
+      const next = { chat_type: "standard", members: [], active_char_id: null, ...b, user_char_id: id ?? null };
+      chatsAPI.bindCharacters(activeChatId, next).catch(console.error);
+      setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, character_bindings: next } : c));
+    }
+  }
+
+  async function chatWithCharacter(id) {
+    await selectCharacter(id, false);   // never toggles off, unlike the old Model button
+    setGroupChatMembers([]);            // one-on-one chat, not a leftover group
+    setActivePanel("chat");
+    const linked = await lorebooksAPI.forCharacter(id).catch(() => []);
+    beginNewChat({ preselected: linked, withCharacter: true });
   }
 
   async function createNewChat() {
@@ -464,6 +533,7 @@ export default function App() {
         setUserCharId(bindings.user_char_id ?? null);
         setCharactersLoading(false);
     }
+    if (bindings.user_char_id !== undefined) setUserCharId(bindings.user_char_id ?? null);
     if (bindings.chat_type === "group" && bindings.members?.length) {
       setGroupChatMembers(bindings.members);
     } else {
@@ -536,19 +606,6 @@ export default function App() {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
   }
 
-  async function onWorldSelected(worldId) {
-    setWorldSelectorOpen(false);
-    const newChatId = await createNewChat();
-    await chatsAPI.setWorld(newChatId, worldId);
-    setChats(prev => prev.map(c => c.id === newChatId ? { ...c, world_id: worldId } : c));
-    ensureWorldCached(worldId);
-  }
-
-  async function onWorldSkipped() {
-    setWorldSelectorOpen(false);
-    await createNewChat();
-  }
-
   //――― Migration ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
   async function migrateMessagesFromLocalStorage() {
     const keysToMigrate = Object.keys(localStorage)
@@ -580,9 +637,10 @@ export default function App() {
   const {status: embedderStatus, embed} = useEmbedder();
 
   // ── Summarise & store ───────────────────────────────────────────────────────
-  const world_time = worldTimeCache[activeChat.world_id]
-  const {addManualMemory,summariseAndStore} = useMemory({configRef, lmUrlRef, activeChatIdRef, world_time, addLog, setMemories})
+  const activeChatObj = chats.find(c => c.id === activeChatId);
+  const world_time = activeChatObj?.world_id ? worldTimeCache[activeChatObj.world_id]?.offset_minutes : undefined;
 
+  const { addManualMemory, summariseAndStore } = useMemory({ configRef, lmUrlRef, activeChatIdRef, world_time, addLog, setMemories });
   // ―― Events ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
   const { enqueue: enqueueEvent } = useEventQueue(activeChatId, {
     turn_start: ({ char_id, node_id }) => {
@@ -734,22 +792,24 @@ export default function App() {
   }
 
   // ── Lorebook ────────────────────────────────────────────────────────────────
-  async function addLorebookEntry(draft) {
+  async function addLorebookEntry(draft, lorebookId) {
     const embedText = `${draft.title} ${draft.tags}`.trim();
     const vec       = await embed(embedText);
     const entry     = {
-      id:        `lore_${Date.now()}`,
-      title:     draft.title,
-      type:      draft.type,
-      tags:      draft.tags,
-      content:   draft.content,
-      embedding: vec,
-      timestamp: new Date().toISOString(),
+      id:              `lore_${Date.now()}`,
+      lorebook_id:     lorebookId ?? lorebook.find(e => e.id === editingLore)?.lorebook_id,
+      title:           draft.title,
+      type:            draft.type,
+      tags:            draft.tags,
+      content:         draft.content,
+      embedding_model: "Xenova/all-MiniLM-L6-v2",
+      embedding:       vec,
+      timestamp:       new Date().toISOString(),
     };
 
     if (editingLore) {
       await lorebookAPI.update(editingLore, entry);
-      setLorebook(prev => prev.map(e => e.id === editingLore ? entry : e));
+      setLorebook(prev => prev.map(e => e.id === editingLore ? { ...e, ...entry } : e));
       // Update graph entity too
       await graphAPI.updateEntity(editingLore, {
         name:        draft.title,
@@ -782,6 +842,20 @@ export default function App() {
     setLorebook(prev => prev.filter(e => e.id !== id));
   }
 
+  async function createLorebookBook(body) {
+    const { id } = await lorebooksAPI.create(body);
+    const now = new Date().toISOString();
+    setLorebooks(prev => [...prev, { id, ...body, entry_cap: 150, created_at: now, updated_at: now }]);
+  }
+
+  async function deleteLorebookBook(book) {
+    await lorebooksAPI.delete(book.id);
+    setLorebooks(prev => prev.filter(b => b.id !== book.id));
+    setLorebook(prev => prev.filter(e => e.lorebook_id !== book.id));
+    setChats(prev => prev.map(c => ({ ...c, lorebook_ids: (c.lorebook_ids ?? []).filter(id => id !== book.id) })));
+    graphAPI.getEntities(activeChatId, activePreset).then(u => setEntities(u ?? [])).catch(() => {});
+  }
+
   async function toggleLorePin(id, pinned) {
     await lorebookAPI.pin(id, pinned);
     setLorebook(prev => prev.map(e => e.id === id ? { ...e, pinned } : e));
@@ -799,6 +873,12 @@ export default function App() {
     setLoreEdgePanel({ entry, edges: shaped });
   }
 
+  async function updateChatLorebooks(ids) {
+    if (!activeChatId) return;
+    setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, lorebook_ids: ids } : c));
+    chatsAPI.setLorebooks(activeChatId, ids).catch(e => addLog(`Couldn't save lorebooks: ${e.message}`));
+  }
+
   // ── Log ─────────────────────────────────────────────────────────────────────
   function addLog(msg) {
     setMemoryLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev.slice(0, 49)]);
@@ -811,6 +891,8 @@ export default function App() {
     const activeChar = characters.find(c => c.id === effectiveCharId) ?? null;
     const userChar   = characters.find(c => c.id === userCharId) ?? null;
     const resolved   = resolveTemplate(systemPrompt, activeChar, userChar);
+
+    let injected = resolved;
 
     const activeChat = chats.find(c => c.id === activeChatIdRef.current);
     if (activeChat?.world_id) {
@@ -828,9 +910,16 @@ export default function App() {
 
     addLog(`Retrieval context: ${profile.context}`);
 
+    const bookIds     = activeChat?.lorebook_ids ?? [];
+    const loreScoped  = ["roleplay", "creative"].includes(cfg.style ?? "none");
+    // roleplay/creative: only the books chosen for this chat (none chosen = no lorebook).
+    // Other presets have no picker, so an empty list keeps the old behaviour: search every book.
+    const loreScope   = bookIds.length ? bookIds : null;
+    const loreEnabled = !loreScoped || bookIds.length > 0;
+
     const [pinnedMems, pinnedLore, activeInferences] = await Promise.all([
       memoriesAPI.getPinned(activeChatIdRef.current),
-      lorebookAPI.getPinned(),
+      loreEnabled ? lorebookAPI.getPinned(loreScope) : Promise.resolve([]),
       episodicAPI.getInferences(activeChatIdRef.current, "active").catch(() => []),
     ]);
 
@@ -860,13 +949,14 @@ export default function App() {
           activeChatIdRef.current, queryVec,
           profile.topK, profile.threshold,
           profile.alpha, profile.decayRate,
+          activeChat?.world_id ? worldTimeCache[activeChat.world_id]?.offset_minutes : null,
           localStorage.getItem("mlm_experiment_logging") === "true" ? content : null
         );
       }
     }
 
-    const retrievedLore = queryVec && cfg.style !== "roleplay"
-      ? await lorebookAPI.query(queryVec, profile.topK, profile.lorebookThreshold ?? profile.threshold)
+    const retrievedLore = queryVec && loreEnabled
+      ? await lorebookAPI.query(queryVec, profile.topK, profile.lorebookThreshold ?? profile.threshold, loreScope)
       : [];
 
     const pinnedMemIds  = new Set(pinnedMems.map(m => m.id));
@@ -875,7 +965,7 @@ export default function App() {
     const relMems = [...pinnedMems, ...retrievedMems.filter(m => !pinnedMemIds.has(m.id))];
     const relLore = [...pinnedLore, ...retrievedLore.filter(l => !pinnedLoreIds.has(l.id))];
 
-    let injected = resolved;
+    
     if (relMems.length > 0)
       injected += `\n\n[RECALLED MEMORIES — use naturally, do not cite directly]\n${relMems.map(m => `• ${m.summary}`).join("\n")}`;
     if (relLore.length > 0)
@@ -948,76 +1038,83 @@ export default function App() {
     addNode(placeholder);
     setActiveChild(parentId, placeholderId)
 
-    const { content: rawReply, finishReason } = await lmFetch(
-      windowedHistory.map(m => ({ role: m.role, content: m.content })),
-      injected,
-      configRef,
-      lmUrlRef,
-      (accumulated) => {
-        updateNode(placeholderId, n => ({ ...n, content: accumulated }));
-      }
-    );
-
-    const { reasoning, content: reply } = parseReasoning(rawReply);
-
-    updateNode(placeholderId, n => ({
-      ...n,
-      content:      reply ?? "(no response)",
-      reasoning,
-      finishReason,
-    }));
-    persistNode(placeholderId, {
-      content:      reply ?? "(no response)",
-      reasoning,
-      finishReason,
-      injectedMems: relMems.length,
-      injectedLore: relLore.length,
-      injectedRefs: {
-        mems: relMems.map(m => ({ id: m.id, score: m.score ?? null, pinned: !!m.pinned })),
-        lore: relLore.map(l => ({ id: l.id, score: l.score ?? null, pinned: !!l.pinned })),
-        inferences: (activeInferences ?? []).map(i => ({ id: i.id, confidence: i.confidence })),
-      },
-    });
-
-    const activeChat = chats.find(c => c.id === activeChatId);
-    if (activeChat?.world_id && reply) {
-      worldsAPI.advance(activeChat.world_id, reply).catch(console.error);
-    }
-
-    const finalNodes = [...nodes, placeholder];
-
-    // Auto-summarise using active path
-    if(!isRegenerated){
-      turnsSinceChunk.current += 1;
-      // Bind character on first message
-      const activePath = getActivePath(finalNodes, chatActiveChildrenRef.current);
-      if (activePath.filter(m => m.role === "user" && !m.implicit).length === 1 && activeCharId && groupChatMembers.length === 0) {
-          chatsAPI.bindCharacters(activeChatIdRef.current, {
-              active_char_id: activeCharId,
-              user_char_id:   userCharId ?? null,
-              chat_type:      "standard",
-              members:        [],
-          }).catch(console.error);
-      }
-      if (cfg.autoSummarise && turnsSinceChunk.current >= cfg.chunkEvery) {
-        turnsSinceChunk.current = 0;
-        const activePath = getActivePath(finalNodes, activeChildren);
-        summariseAndStore(activePath.slice(-cfg.chunkEvery * 2));
-      }
-    }
-    else{
-      if(turnsSinceChunk.current===0)
-        turnsSinceChunk.current=2; // to allow for updated memories with the regenerated message instead of from a stale one
-    }
-    // Title generation
-    if (activeChat?.title === "New Chat" && history.length >= 2) {
-      try {
-        const newTitle = await generateChatTitle(history);
-        if (newTitle) {
-          await chatsAPI.update(activeChatId, newTitle, new Date().toISOString());
-          setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, title: newTitle } : c));
+    try {
+      const { content: rawReply, finishReason } = await lmFetch(
+        windowedHistory.map(m => ({ role: m.role, content: m.content })),
+        injected,
+        configRef,
+        lmUrlRef,
+        (accumulated) => {
+          updateNode(placeholderId, n => ({ ...n, content: accumulated }));
         }
-      } catch(e) { console.error("title gen failed", e); }
+      );
+
+      const { reasoning, content: reply } = parseReasoning(rawReply);
+
+      updateNode(placeholderId, n => ({
+        ...n,
+        content:      reply ?? "(no response)",
+        reasoning,
+        finishReason,
+      }));
+      persistNode(placeholderId, {
+        content:      reply ?? "(no response)",
+        reasoning,
+        finishReason,
+        injectedMems: relMems.length,
+        injectedLore: relLore.length,
+        injectedRefs: {
+          mems: relMems.map(m => ({ id: m.id, score: m.score ?? null, pinned: !!m.pinned })),
+          lore: relLore.map(l => ({ id: l.id, score: l.score ?? null, pinned: !!l.pinned })),
+          inferences: (activeInferences ?? []).map(i => ({ id: i.id, confidence: i.confidence })),
+        },
+      });
+
+      const activeChat = chats.find(c => c.id === activeChatId);
+      if (activeChat?.world_id && reply) {
+        worldsAPI.advance(activeChat.world_id, reply).catch(console.error);
+      }
+
+      const finalNodes = [...nodes, placeholder];
+
+      // Auto-summarise using active path
+      if(!isRegenerated){
+        turnsSinceChunk.current += 1;
+        // Bind character on first message
+        const activePath = getActivePath(finalNodes, chatActiveChildrenRef.current);
+        if (activePath.filter(m => m.role === "user" && !m.implicit).length === 1 && activeCharId && groupChatMembers.length === 0) {
+            chatsAPI.bindCharacters(activeChatIdRef.current, {
+                active_char_id: activeCharId,
+                user_char_id:   userCharId ?? null,
+                chat_type:      "standard",
+                members:        [],
+            }).catch(console.error);
+        }
+        if (cfg.autoSummarise && turnsSinceChunk.current >= cfg.chunkEvery) {
+          turnsSinceChunk.current = 0;
+          const activePath = getActivePath(finalNodes, activeChildren);
+          summariseAndStore(activePath.slice(-cfg.chunkEvery * 2));
+        }
+      }
+      else{
+        if(turnsSinceChunk.current===0)
+          turnsSinceChunk.current=2; // to allow for updated memories with the regenerated message instead of from a stale one
+      }
+      // Title generation
+      if (activeChat?.title === "New Chat" && history.length >= 2) {
+        try {
+          const newTitle = await generateChatTitle(history);
+          if (newTitle) {
+            await chatsAPI.update(activeChatId, newTitle, new Date().toISOString());
+            setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, title: newTitle } : c));
+          }
+        } catch(e) { console.error("title gen failed", e); }
+      }
+    } catch (e) {
+      const errContent = `Error: ${e.message}`;
+      updateNode(placeholderId, n => ({ ...n, content: errContent, finishReason: "stop" }));
+      persistNode(placeholderId, { content: errContent, finishReason: "stop" });
+      addLog(`Generation failed: ${e.message}`);
     }
   }
 
@@ -1187,28 +1284,19 @@ export default function App() {
   function deleteMessage(id) {
     const node = nodes.find(n => n.id === id);
     if (!node) return;
-
-    // If assistant message preceded by implicit, delete both
     let toDelete = [id];
     if (node.role === "assistant") {
       const parent = nodes.find(n => n.id === node.parentId);
       if (parent?.implicit) toDelete.push(parent.id);
     }
-
-    setNodes(prev => {
-      const next = prev.filter(n => !toDelete.includes(n.id));
-      messagesAPI.save(activeChatId, next, activeChildren).catch(console.error);
-      return next;
-    });
-
-    // Clean up activeChildren references
+    toDelete.forEach(delId => removeNode(delId));
     setActiveChildren(prev => {
       const next = { ...prev };
-      for (const id of toDelete) {
-        delete next[node.parentId];
-      }
+      for (const delId of toDelete) delete next[node.parentId];
+      messagesAPI.setActiveChildren(activeChatIdRef.current, next).catch(console.error);
       return next;
     });
+    switchBranch(node.parentId,-1);
   }
 
   function editMessage(id, newContent) {
@@ -1342,7 +1430,12 @@ export default function App() {
       members:        memberIds,
     });
 
-    setChats(prev => [newChat, ...prev]);
+    const bookIds = [...new Set(
+      (await Promise.all(memberIds.map(id => lorebooksAPI.forCharacter(id).catch(() => [])))).flat()
+    )];
+    if (bookIds.length) await chatsAPI.setLorebooks(newId, bookIds);
+
+    setChats(prev => [{ ...newChat, lorebook_ids: bookIds }, ...prev]);
     setActiveChatId(newId);
     nodesChatRef.current = newId;
     setNodes([]);
@@ -1467,13 +1560,13 @@ export default function App() {
   const isGroupChat = groupChatMembers.length > 0 && config?.style === "roleplay";
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div style={{ fontFamily: "var(--font-sans)", display: "flex", flexDirection: "column", height: "100vh", background: "var(--color-background-tertiary)" }}>
+    <div style={{ fontFamily: "var(--font-sans)", display: "flex", flexDirection: "column", height: "100dvh", background: "var(--color-background-tertiary)" }}>
     
       {/* Header */}
       <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)", flexShrink: 0 }}>
         <button
           onClick={() => setSidebarOpen(o => !o)}
-          style={{ fontFamily: "Playfair Display",fontWeight: 650, fontSize: 17, letterSpacing: "-0.3px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-app-name)", padding: 0 }}
+          style={{ fontFamily: "Playfair Display",fontWeight: 650, fontSize: isMobile ? 19 : 17, letterSpacing: "-0.3px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-app-name)", padding: 0 }}
         >
           MemoryLM
         </button>
@@ -1542,6 +1635,10 @@ export default function App() {
           characters={characters}
           entities={entities}
           graphAPI={graphAPI}
+          lorebooks={lorebooks}
+          lorebookEntryCounts={lorebookEntryCounts}
+          chatLorebookIds={chats.find(c => c.id === activeChatId)?.lorebook_ids ?? []}
+          onChangeLorebooks={updateChatLorebooks}
         />
       </div>
 
@@ -1614,6 +1711,10 @@ export default function App() {
             pendingNarrativeTurn={activePendingNarrative}
             onInvokeNarrativeTurn={invokeNarrativeTurn}
             onSkipNarrativeTurn={skipNarrativeTurn}
+            characters={characters}
+            userCharId={userCharId}
+            onSelectUserPersona={selectUserPersona}
+            modelName={defaultModelName}
           />
         )}
 
@@ -1636,6 +1737,10 @@ export default function App() {
             onStartGroupChat={config?.style === "roleplay" ? () => setGroupSetupOpen(true) : undefined}
             onOpenWorlds={() => setWorldsModalOpen(true)}
             confirm={confirm}
+            onSelectCharacter={selectCharacter}
+            onChatWith={chatWithCharacter}
+            lorebooks={lorebooks}
+            lorebookEntryCounts={lorebookEntryCounts}
           />
         )}
 
@@ -1657,6 +1762,7 @@ export default function App() {
         {activePanel === "lorebook" && (
           <Lorebook
             lorebook={lorebook}
+            lorebooks={lorebooks}
             lorebookDraft={lorebookDraft}
             editingLore={editingLore}
             setEditingLore={setEditingLore}
@@ -1671,6 +1777,9 @@ export default function App() {
             setLoreEdgePanel={setLoreEdgePanel}
             entities={entities}
             graphAPI={graphAPI}
+            onCreateBook={createLorebookBook}
+            onDeleteBook={deleteLorebookBook}
+            confirm={confirm}
           />
         )}
 
@@ -1695,7 +1804,6 @@ export default function App() {
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         lmStudioUrl={lmStudioUrl}
-        setLmStudioUrl={setLmStudioUrl}
         config={config}
         setConfig={setConfig}
         persistConfig={persistConfig}
@@ -1736,12 +1844,15 @@ export default function App() {
       {ConfirmModalRenderer()}
       {shortcutsOpen && <KeyboardShortcutsModal onClose={() => setShortcutsOpen(false)} />}
 
-      {worldSelectorOpen && (
-        <WorldSelectorModal
+      {newChatFlow && (
+        <NewChatModal
           activePresetId={activePreset}
           activeCharId={activeCharId}
-          onSelect={onWorldSelected}
-          onSkip={onWorldSkipped}
+          lorebooks={lorebooks}
+          entryCounts={lorebookEntryCounts}
+          {...newChatFlow}
+          onStart={finishNewChat}
+          onCancel={() => setNewChatFlow(null)}
         />
       )}
 

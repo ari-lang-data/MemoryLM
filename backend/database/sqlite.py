@@ -13,17 +13,49 @@ import uuid
 
 # ─── Models ───────────────────────────────────────────────────────────────────
 
+class ApiToken(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    label: str
+    token_hash: str
+    created_at: str
+    last_used_at: Optional[str] = None
+
+class ModelConnection(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    label: str
+    provider: str      # openai-compatible | anthropic
+    base_url: str
+    api_key: Optional[str] = Field(default=None)
+    model_name: str
+    is_default: bool = Field(default=False)
+    reasoning_enabled: bool = Field(default=False)
+    reasoning_effort: str = Field(default="medium")          # "low" | "medium" | "high"
+    reasoning_budget_tokens: Optional[int] = Field(default=None)
+    created_at: str
+
 class Chat(SQLModel, table=True):
     id: str = Field(primary_key=True)
     title: str = Field(default="New Chat")
     chat_type:           str = Field(default="standard")
     character_bindings:  str = Field(default="{}")  # JSON
     world_id: Optional[str] = Field(default=None)
+    lorebook_ids: str = Field(default="[]")   # JSOn list of lorebook ids this retrieves from 
     activation_state: str = Field(default="{}")
     active_children: str = Field(default="{}")
     archived: bool = Field(default=False)
     created_at: str
     updated_at: str
+
+class Lorebook(SQLModel, table=True):
+    id:         str = Field(primary_key=True)
+    title:      str 
+    cover:      str = Field(default="{}")
+    world_id:   Optional[str] = Field(default=None)
+    created_at: str
+    updated_at: str
+
+LOREBOOK_ENTRY_CAP = 150
+DEFAULT_LOREBOOK_ID = "lb_imported"
 
 class Preset(SQLModel, table=True):
     id: str = Field(primary_key=True)
@@ -117,6 +149,11 @@ class WorldCharacterLink(SQLModel, table=True):
     world_id:   str = Field(index=True)
     char_id:    str = Field(index=True)   # DuckDB entity id — no FK, cross-store by convention
 
+class CharacterLorebookLink(SQLModel, table=True):
+    id:          Optional[int] = Field(default=None, primary_key=True)
+    char_id:     str = Field(index=True)     # DuckDB entity id: no FK, cross-store by convention
+    lorebook_id: str = Field(index=True)
+
 # ─── Engine ───────────────────────────────────────────────────────────────────
 
 load_dotenv()
@@ -130,6 +167,7 @@ SQLITE_MIGRATIONS = [
     ("chat", "activation_state",    "VARCHAR DEFAULT '{}'"),
     ("chat", "active_children",     "VARCHAR DEFAULT '{}'"),
     ("chat", "world_id",            "VARCHAR DEFAULT NULL"),
+    ("chat", "lorebook_ids",        "VARCHAR DEFAULT '[]'"),
     ("episodicinference", "world_time_at_update", "INTEGER DEFAULT NULL"),
 ]
 
@@ -209,6 +247,54 @@ def set_chat_archived(session: Session, chat_id: str, archived: bool) -> bool:
     if not chat:
         return False
     chat.archived = archived
+    session.add(chat)
+    session.commit()
+    return True
+
+# ─── Lorebook helpers ─────────────────────────────────────────────────────────
+
+def list_lorebooks(session: Session):
+    return session.exec(select(Lorebook)).all()
+
+def get_lorebook(session: Session, book_id: str) -> Optional[Lorebook]:
+    return session.get(Lorebook, book_id)
+
+def create_lorebook(session: Session, **fields) -> Lorebook:
+    book = Lorebook(**fields)
+    session.add(book)
+    session.commit()
+    return book
+
+def update_lorebook(session: Session, book_id: str, updates: dict) -> bool:
+    book = session.get(Lorebook, book_id)
+    if not book:
+        return False
+    for k, v in updates.items():
+        setattr(book, k, v)
+    session.add(book)
+    session.commit()
+    return True
+
+def delete_lorebook_row(session: Session, book_id: str) -> bool:
+    book=session.get(Lorebook, book_id)
+    if not book:
+        return False
+    for chat in session.exec(select(Chat)).all():
+        ids = json.loads(chat.lorebook_ids or "[]")
+        if book_id in ids:
+            chat.lorebook_ids = json.dumps([i for i in ids if i!= book_id])
+            session.add(chat)
+    for link in session.exec(select(CharacterLorebookLink).where(CharacterLorebookLink.lorebook_id == book_id)).all():
+        session.delete(link)
+    session.delete(book)
+    session.commit()
+    return True
+
+def set_chat_lorebooks(session: Session, chat_id: str, ids: list)-> bool:
+    chat = session.get(Chat, chat_id)
+    if not chat:
+        return False
+    chat.lorebook_ids = json.dumps(ids)
     session.add(chat)
     session.commit()
     return True
@@ -495,6 +581,7 @@ def replace_chat_messages(session: Session, chat_id: str, nodes: list[dict], act
     existing = session.exec(select(MessageNode).where(MessageNode.chat_id == chat_id)).all()
     for m in existing:
         session.delete(m)
+    session.flush()
     for node in nodes:
         node = {**node, "chat_id": chat_id}
         m = MessageNode(
@@ -555,13 +642,6 @@ def _node_to_dict(m: MessageNode) -> dict:
 # ―――――― Authentication ――――――――――――――――――――――――――――――――――――――――――――――――
 from datetime import datetime, timezone
 
-class ApiToken(SQLModel, table=True):
-    id: str = Field(primary_key=True)
-    label: str
-    token_hash: str
-    created_at: str
-    last_used_at: Optional[str] = None
-
 def hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -598,3 +678,57 @@ def verify_api_token(session: Session, raw: str) -> bool:
     session.add(token)
     session.commit()
     return True
+
+# ―――――― Model connection ―――――――――――――――――――――――――――――――――――
+
+def create_connection(session: Session, **kwargs) -> ModelConnection:
+    conn = ModelConnection(**kwargs)
+    session.add(conn)
+    session.commit()
+    return conn
+
+def list_connections(session: Session):
+    return session.exec(select(ModelConnection)).all()
+
+def get_connection(session: Session, conn_id: str) -> Optional[ModelConnection]:
+    return session.get(ModelConnection, conn_id)
+
+def update_connection(session: Session, conn_id: str, updates: dict) -> bool:
+    conn = session.get(ModelConnection, conn_id)
+    if not conn:
+        return False
+    for k, v in updates.items():
+        setattr(conn, k, v)
+    session.add(conn)
+    session.commit()
+    return True
+
+def delete_connection(session: Session, conn_id: str) -> bool:
+    conn = session.get(ModelConnection, conn_id)
+    if not conn:
+        return False
+    session.delete(conn)
+    session.commit()
+    return True
+
+def set_default_connection(session: Session, conn_id: str) -> bool:
+    target = session.get(ModelConnection, conn_id)
+    if not target:
+        return False
+    all_conns = session.exec(select(ModelConnection)).all()
+    for c in all_conns:
+        c.is_default = (c.id == conn_id)
+        session.add(c)
+    session.commit()
+    return True
+
+def get_default_connection(session: Session) -> Optional[ModelConnection]:
+    default = session.exec(select(ModelConnection).where(ModelConnection.is_default == True)).first()
+    if default:
+        return default
+    # No explicit default yet — if there's exactly one connection, that's
+    # the obvious choice rather than erroring on an otherwise-complete
+    # setup. Multiple connections with none marked default stays ambiguous
+    # on purpose — no silent guess between two real options.
+    all_conns = session.exec(select(ModelConnection)).all()
+    return all_conns[0] if len(all_conns) == 1 else None

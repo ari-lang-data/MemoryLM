@@ -4,7 +4,8 @@ from database.sqlite import init_db
 from auth import require_auth
 from dotenv import load_dotenv
 import os
-from routers import memories, lorebook, chats, presets, messages, clusters, graph, episodic, tokens
+from routers import connections, memories, lorebook, lorebooks, chats, presets, messages, clusters, graph, episodic, tokens, generation
+from routers.lorebooks import backfill_default_lorebook
 from database.graph import init_graph, switch_to_sqlite
 from routers import events, worlds
 from database.queue_processor import ensure_processor
@@ -17,7 +18,10 @@ load_dotenv()
 app = FastAPI(title="MemoryLM Backend", dependencies=[Depends(require_auth)])
 
 app.include_router(tokens.router, prefix="/auth/tokens", tags=["auth"])
+app.include_router(connections.router, prefix="/connections", tags=["connections"])
+app.include_router(generation.router,  prefix="/generation",  tags=["generation"])
 app.include_router(messages.router,  prefix="/messages",  tags=["messages"])
+app.include_router(lorebooks.router, prefix="/lorebooks", tags=["lorebooks"])
 app.include_router(clusters.router,  prefix="/clusters",  tags=["clusters"])
 app.include_router(graph.router,     prefix="/graph",     tags=["graph"])
 app.include_router(episodic.router,  prefix="/episodic",  tags=["episodic"])
@@ -37,6 +41,7 @@ app.add_middleware(
 def on_startup():
     init_db()
     migrate_json_messages_to_sqlite()
+    backfill_default_lorebook()
 
     try:
         backend = init_graph()

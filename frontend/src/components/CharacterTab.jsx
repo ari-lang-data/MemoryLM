@@ -1,6 +1,9 @@
 import { useState, useRef } from "react";
 import { graphAPI } from "../lib/api";
-import { Globe2, X } from "lucide-react";
+import { Globe2 } from "lucide-react";
+import CharacterCard from "./CharacterCard";
+import { lorebooksAPI } from "../lib/api";
+import LorebookPicker from "./LorebookPicker";
 
 const RELATIONSHIP_TYPES = [
   "friend of", "parent of", "child of", "step-parent of", "step-child of", "teaches", "knows", "commands", "betrayed", "allies with", "rivals", "spouse of",
@@ -47,7 +50,7 @@ const EMPTY_DRAFT = {
   name: "", type: "character", description: "",
   appearance: "", behaviour: "", speech_pattern: "", background: "",
   narrative_alias: "", address_formal: "", address_informal: "", bias: 0.5,
-  metadata: {},
+  metadata: {}, lorebook_ids: [],
 };
 
 export default function CharacterTab({
@@ -62,7 +65,9 @@ export default function CharacterTab({
   setUserCharId,
   entities,
   setEntities, confirm,
-  inputStyle, charactersLoading, onStartGroupChat, onOpenWorlds
+  inputStyle, charactersLoading, onStartGroupChat, onOpenWorlds,
+  onSelectCharacter, onChatWith,
+  lorebooks, lorebookEntryCounts,
 }) {
   const [view,          setView]          = useState("list"); // "list" | "edit" | "edges"
   const [draft,         setDraft]         = useState(EMPTY_DRAFT);
@@ -97,9 +102,11 @@ export default function CharacterTab({
       address_informal: char.address_informal ?? "",
       bias:             char.bias ?? 0.5,
       metadata:         typeof char.metadata === "string" ? JSON.parse(char.metadata) : (char.metadata ?? {}),
+      lorebook_ids:     [],
     });
     setEditingId(char.id);
     setView("edit");
+    lorebooksAPI.forCharacter(char.id).then(ids => setDraft(d => ({ ...d, lorebook_ids: ids }))).catch(() => {});
   }
 
   async function openEdges(char) {
@@ -151,13 +158,15 @@ export default function CharacterTab({
         speech_pattern:   draft.speech_pattern,
         background:       draft.background,
         preset_id:        activePresetId,
-        is_active_char:   false,
-        is_user_char:     false,
+        is_active_char:   id === activeCharId,
+        is_user_char:     id === userCharId,
         narrative_alias:  draft.narrative_alias  || null,
         address_formal:   draft.address_formal   || null,
         address_informal: draft.address_informal || null,
         bias:             draft.bias ?? 0.5,
       });
+
+      await lorebooksAPI.setCharacterBooks(id, draft.lorebook_ids ?? []);
 
       // Refresh characters list
       const updated = await graphAPI.getCharacters(activePresetId);
@@ -170,61 +179,10 @@ export default function CharacterTab({
   }
 
   async function deleteCharacter(id) {
-    if (!confirm("Delete this character?")) return;
     await graphAPI.deleteEntity(id);
     setCharacters(prev => prev.filter(c => c.id !== id));
     if (activeCharId === id) setActiveCharId(null);
     if (userCharId   === id) setUserCharId(null);
-  }
-
-  async function activateCharacter(id, isUser = false) {
-    if (!isUser && activeCharId === id) {
-      // Deselect — clear active character
-      await graphAPI.activateCharacter(id, false); // will set FALSE below
-      // Set all to false for this preset
-      await fetch(`/graph/characters/${id}/deactivate`, { method: "PATCH" }).catch(() => null);
-      // Simpler: just update DB to false directly via upsert
-      const char = characters.find(c => c.id === id);
-      if (char) {
-        await graphAPI.upsertCharacter(id, {
-          appearance:     char.appearance     ?? "",
-          behaviour:      char.behaviour      ?? "",
-          speech_pattern: char.speech_pattern ?? "",
-          background:     char.background     ?? "",
-          preset_id:      activePresetId,
-          is_active_char: false,
-          is_user_char:   char.id === userCharId,
-          narrative_alias:  char.narrative_alias  ?? null,
-          address_formal:   char.address_formal   ?? null,
-          address_informal: char.address_informal ?? null,
-        });
-      }
-      const [updated, updatedVars] = await Promise.all([
-        graphAPI.getCharacters(activePresetId),
-        graphAPI.getTemplateVars(activePresetId),
-      ]);
-      setCharacters(updated ?? []);
-      setTemplateVars(updatedVars ?? []);
-      setActiveCharId(null);
-      return;
-    }
-    await graphAPI.activateCharacter(id, isUser);
-
-    // Auto-set template var
-    await graphAPI.setTemplateVar({
-        var_name:  isUser ? "usr" : "char",
-        entity_id: id,
-        preset_id: activePresetId,
-    });
-
-    const [updated, updatedVars] = await Promise.all([
-        graphAPI.getCharacters(activePresetId),
-        graphAPI.getTemplateVars(activePresetId),
-    ]);
-    setCharacters(updated ?? []);
-    setTemplateVars(updatedVars ?? []);
-    if (isUser) setUserCharId(id);
-    else        setActiveCharId(id);
   }
 
   async function addEdge() {
@@ -286,7 +244,7 @@ export default function CharacterTab({
               <span style={{ fontSize: 12, color: "var(--color-text-secondary)", minWidth: 60 }}>{"{$char}"}</span>
               <select
                 value={templateVars.find(v => v.var_name === "char")?.entity_id ?? ""}
-                onChange={e => setTemplateVar("char", e.target.value || null)}
+                onChange={e => onSelectCharacter(e.target.value || null, false)}   // {$char}
                 style={{ ...inputStyle, flex: 1, fontSize: 12 }}
               >
                 <option value="">None</option>
@@ -297,7 +255,7 @@ export default function CharacterTab({
               <span style={{ fontSize: 12, color: "var(--color-text-secondary)", minWidth: 60 }}>{"{$usr}"}</span>
               <select
                 value={templateVars.find(v => v.var_name === "usr")?.entity_id ?? ""}
-                onChange={e => setTemplateVar("usr", e.target.value || null)}
+                onChange={e => onSelectCharacter(e.target.value || null, false)}   // {$usr}
                 style={{ ...inputStyle, flex: 1, fontSize: 12 }}
               >
                 <option value="">None (user is themselves)</option>
@@ -310,56 +268,18 @@ export default function CharacterTab({
             ? <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 13, padding: 32 }}>No characters yet. Add one to get started.</div>
             : charactersLoading === true ? <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 13, padding: 32 }}>Loading...</div>
             : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-                {characters.map(char => {
-                    const meta     = typeof char.metadata === "string" ? JSON.parse(char.metadata) : (char.metadata ?? {});
-                    const isActive = char.id === activeCharId;
-                    const isUser   = char.id === userCharId;
-                    return (
-                    <div key={char.id} style={{ background: "var(--color-background-primary)", borderRadius: "var(--border-radius-lg)", border: `0.5px solid ${isActive ? "var(--color-text-info)" : isUser ? "var(--color-text-success)" : "var(--color-border-tertiary)"}`, padding: "14px 12px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-                        
-                        {/* Avatar */}
-                        <Avatar src={meta.avatar} name={char.name} size={64} />
-
-                        {/* Name + badges */}
-                        <div style={{ textAlign: "center" }}>
-                        <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 500 }}>{char.name}</p>
-                        <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
-                            {isActive && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-info)", color: "var(--color-text-info)", border: "0.5px solid currentColor" }}>model</span>}
-                            {isUser   && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: "var(--border-radius-md)", background: "var(--color-background-success)", color: "var(--color-text-success)", border: "0.5px solid currentColor" }}>user</span>}
-                        </div>
-                        </div>
-
-                        {/* Field indicators */}
-                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center" }}>
-                        {char.appearance     && <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>appearance ✓</span>}
-                        {char.behaviour      && <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>behaviour ✓</span>}
-                        {char.speech_pattern && <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>speech ✓</span>}
-                        {char.background     && <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>background ✓</span>}
-                        </div>
-
-                        {char.description && (
-                        <p style={{ margin: 0, fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.4, textAlign: "center", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{char.description}</p>
-                        )}
-
-                        {/* Actions */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 5, width: "100%", marginTop: "auto" }}>
-                        <div style={{ display: "flex", gap: 5 }}>
-                            <button onClick={() => activateCharacter(char.id, false)} style={{ ...inputStyle, cursor: "pointer", fontSize: 11, padding: "3px 0", flex: 1, textAlign: "center", borderColor: isActive ? "var(--color-text-info)" : undefined, color: isActive ? "var(--color-text-info)" : "var(--color-text-primary)" }} title= "Activate model persona">
-                            {isActive ? "Model ✓" : "Model"}
-                            </button>
-                            <button onClick={() => activateCharacter(char.id, true)} style={{ ...inputStyle, cursor: "pointer", fontSize: 11, padding: "3px 0", flex: 1, textAlign: "center", borderColor: isUser ? "var(--color-text-success)" : undefined, color: isUser ? "var(--color-text-success)" : "var(--color-text-primary)" }} title= "Choose as your persona">
-                            {isUser ? "User ✓" : "User"}
-                            </button>
-                        </div>
-                        <div style={{ display: "flex", gap: 5 }}>
-                            <button onClick={() => openEdges(char)} style={{ ...inputStyle, cursor: "pointer", fontSize: 11, padding: "3px 0", flex: 1, textAlign: "center" }}>Links</button>
-                            <button onClick={() => openEdit(char)}  style={{ ...inputStyle, cursor: "pointer", fontSize: 11, padding: "3px 0", flex: 1, textAlign: "center" }}>Edit</button>
-                            <button onClick={ async () => { if (await confirm("Delete thhis Character?")) deleteCharacter(char.id)}} style={{ ...inputStyle, cursor: "pointer", fontSize: 11, padding: "3px 0", flex: 1, alignItems: "center", color: "var(--color-text-danger)", borderColor: "var(--color-border-danger)" }}><X size={11}/></button>
-                        </div>
-                        </div>
-                    </div>
-                    );
-                })}
+                {characters.map(char => (
+                  <CharacterCard
+                    key={char.id}
+                    char={char}
+                    isActive={char.id === activeCharId}
+                    isUser={char.id === userCharId}
+                    onChat={() => onChatWith(char.id)}
+                    onLinks={() => openEdges(char)}
+                    onEdit={() => openEdit(char)}
+                    onDelete={async () => { if (await confirm("Delete this character?")) deleteCharacter(char.id); }}
+                  />
+                ))}
             </div>
           }
         </div>
@@ -443,6 +363,20 @@ export default function CharacterTab({
               How readily this character speaks unprompted in group chats.
             </p>
           </div>
+
+          {lorebooks.length > 0 && (
+            <div>
+              <p style={{ margin: "0 0 6px", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                Lorebooks <span style={{ opacity: 0.6 }}>(pre-selected when you start a chat with this character)</span>
+              </p>
+              <LorebookPicker
+                lorebooks={lorebooks}
+                entryCounts={lorebookEntryCounts}
+                selectedIds={draft.lorebook_ids ?? []}
+                onChange={ids => setDraft(d => ({ ...d, lorebook_ids: ids }))}
+              />
+            </div>
+          )}
 
           <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             <button onClick={saveCharacter} disabled={!draft.name.trim() || saving} style={{ ...inputStyle, flex: 1, cursor: "pointer", textAlign: "center", opacity: (!draft.name.trim() || saving) ? 0.4 : 1 }}>

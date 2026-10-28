@@ -1,62 +1,31 @@
-export async function lmFetch(msgs, sysprompt, configRef, lmUrlRef, onChunk = null, maxTokens=null) {
-  const cfg  = configRef.current;
-  const base = lmUrlRef.current.replace(/\/$/, "");
-  const body = {
-    messages:           [{ role: "system", content: sysprompt }, ...msgs],
-    max_tokens:         maxTokens ?? 1000,
-    temperature:        cfg.temperature ?? 0.7,
-    repetition_penalty: cfg.repetitionPenalty ?? 1.0,
-    stream:             !!onChunk,  // only stream if callback provided
-  };
-  if (cfg.modelName) body.model = cfg.modelName;
+import { streamChatCompletion } from "./api";
 
-  const res = await fetch(`${base}/v1/chat/completions`, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify(body),
-  });
+export async function lmFetch(msgs, sysprompt, configRef, lmUrlRef, onChunk = null, maxTokens = null) {
+  const cfg = configRef.current;
+  const messages = [{ role: "system", content: sysprompt }, ...msgs];
 
-  // Non-streaming path — unchanged
-  if (!onChunk) {
-    const data = await res.json();
-    const choice = data.choices?.[0];
-    return {
-      content:      choice?.message?.content ?? null,
-      finishReason: choice?.finish_reason ?? "stop",
-    };
-  }
-
-  // Streaming path
-  const reader  = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer      = "";
-  let content     = "";
+  let content = "";
+  let reasoning = "";
   let finishReason = "stop";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop(); // keep incomplete line in buffer
-
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const data = line.slice(6).trim();
-      if (data === "[DONE]") break;
-      try {
-        const parsed = JSON.parse(data);
-        const delta  = parsed.choices?.[0]?.delta?.content;
-        const reason = parsed.choices?.[0]?.finish_reason;
-        if (delta) {
-          content += delta;
-          onChunk(content);  // call with accumulated content so far
-        }
-        if (reason) finishReason = reason;
-      } catch { /* malformed chunk, skip */ }
+  for await (const chunk of streamChatCompletion({
+    messages,
+    temperature: cfg.temperature ?? 0.7,
+    maxTokens: maxTokens ?? 1000,
+    extraParams: { repetition_penalty: cfg.repetitionPenalty ?? 1.0 },
+  })) {
+    if (chunk.error) throw new Error(chunk.error);
+    if (chunk.delta) {
+      content += chunk.delta;
+      if (onChunk) onChunk(content, reasoning);
     }
+    if (chunk.reasoning_delta) {
+      reasoning += chunk.reasoning_delta;
+      if (onChunk) onChunk(content, reasoning);
+    }
+    if (chunk.finish_reason) finishReason = chunk.finish_reason;
+    if (chunk.done) break;
   }
 
-  return { content, finishReason };
+  return { content, reasoning, finishReason };
 }

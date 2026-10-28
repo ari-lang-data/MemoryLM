@@ -9,6 +9,7 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { authAPI, getApiToken, setApiToken } from "../lib/api";
 import { ChevronRight, X, Plus } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import ConnectionsManager from "./ConnectionsManager";
 
 const FIXED_PRESET_IDS = ["assistant", "coding", "creative", "roleplay"];
 
@@ -218,7 +219,7 @@ export default function SettingsModal({
   isOpen,
   onClose,
   // Settings props
-  lmStudioUrl, setLmStudioUrl,
+  lmStudioUrl,
   config, setConfig,
   persistConfig,
   systemPrompt, setSystemPrompt,
@@ -406,15 +407,8 @@ async function handleRevoke(id) {
               {settingsTab === "connection" && (
                 <>
                   <Card>
-                    <CardTitle>LM Studio</CardTitle>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      <Row label="Server URL">
-                        <input value={lmStudioUrl} onChange={e => { setLmStudioUrl(e.target.value); persistConfig(config, systemPrompt, e.target.value); }} placeholder="http://localhost:1234" style={{ ...inputStyle, flex: 1 }} />
-                      </Row>
-                      <Row label={<>Model name <span style={{ fontSize: 11, opacity: 0.6 }}>(optional)</span></>}>
-                        <input value={config.modelName} onChange={e => { const n = { ...config, modelName: e.target.value }; setConfig(n); persistConfig(n, systemPrompt, lmStudioUrl); }} placeholder="Leave blank to use loaded model" style={{ ...inputStyle, flex: 1 }} />
-                      </Row>
-                    </div>
+                    <CardTitle>Connections</CardTitle>
+                    <ConnectionsManager />
                   </Card>
                   <Card>
                     <CardTitle>Devices</CardTitle>
@@ -450,7 +444,7 @@ async function handleRevoke(id) {
                         <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", margin: "0 0 4px" }}>
                           Shown once — copy it onto the device now.
                         </p>
-                        <div style={{ background: "#ffffff", padding: 10, borderRadius: "var(--border-radius-md)" }}>
+                        <div style={{ display: "flex", flexDirection: "column", background: "#ffffff", padding: 10, borderRadius: "var(--border-radius-md)", margin: "0 auto", gap: 8, maxWidth: 180 }}>
                           <QRCodeSVG value={justCreated} size={160} />
                         </div>
                         <code style={{ fontSize: 11, wordBreak: "break-all", color: "var(--color-text-primary)" }}>{justCreated}</code>

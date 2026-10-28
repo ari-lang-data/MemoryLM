@@ -5,8 +5,8 @@ from database.sqlite import (
     set_chat_archived,
 )
 from database.chroma import get_memories_collection
-from models.schemas import ChatCreate, ChatUpdate, ChatBindCharacters, ChatArchiveUpdate, SuccessResponse
-from database.sqlite import bind_chat_characters
+from models.schemas import ChatCreate, ChatUpdate, ChatBindCharacters, ChatLorebooksUpdate, ChatArchiveUpdate, SuccessResponse
+from database.sqlite import bind_chat_characters, set_chat_lorebooks
 from pydantic import BaseModel
 from typing import Optional
 import json
@@ -29,12 +29,19 @@ def get_all(session: Session = Depends(get_session)):
             "updated_at":          c.updated_at,
             "chat_type":           c.chat_type,
             "world_id":            c.world_id,
+            "lorebook_ids":        json.loads(c.lorebook_ids or "[]"),
             "character_bindings":  json.loads(c.character_bindings or "{}"),
             "activation_state":    c.activation_state,
             "archived":            c.archived,
         }
         for c in chats
     ]
+
+@router.patch("/{chat_id}/lorebooks", response_model=SuccessResponse)
+def set_lorebooks(chat_id: str, body: ChatLorebooksUpdate, session: Session = Depends(get_session)):
+    if not set_chat_lorebooks(session, chat_id, body.lorebook_ids):
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return SuccessResponse()
 
 @router.patch("/{chat_id}", response_model=SuccessResponse)
 def update(chat_id: str, body: ChatUpdate, session: Session = Depends(get_session)):

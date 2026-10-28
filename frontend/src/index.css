@@ -165,9 +165,9 @@
   --color-border-danger:    #e8aaaa;
   --color-border-select:    #493e3e;
   --glass-rgb: 200,200,200;
-  --color-rim-accent-1: #eef3f9;  /* ice-blue — catch-light */
-  --color-rim-accent-2: #d68a3c;  /* warm amber — counter-glow */
-  --color-rim-accent-3: #b8b8b8;  /* neutral grey — shadow tint */
+  --color-rim-accent-1: #7f8fa1;  /* ice-blue — catch-light */
+  --color-rim-accent-2: #c4823f;  /* warm amber — counter-glow */
+  --color-rim-accent-3: #504d4d;  /* neutral grey — shadow tint */
 }
 
 /* ── Base styles ────────────────────────────────────────────────────────────── */
@@ -221,7 +221,7 @@ textarea, input, select { color-scheme: dark; }
 
   --border-radius-sm: 4px;
   --border-radius-md: 8px;
-  --border-radius-lg: 12px;
+  --border-radius-lg: 20px;
 
   --markdown-paragraph-margin: 8px;
   --rp-paragraph-margin: 16px;
@@ -244,7 +244,7 @@ textarea {
   border: 0.5px solid var(--color-border-secondary);
   border-radius: var(--border-radius-lg);
 
-  overflow: hidden;
+  overflow: visible;
 
   transition:
     border-color 0.15s ease,
@@ -260,6 +260,7 @@ textarea {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  gap: 8px;
 
   padding: 0px 8px 8px;
 }
@@ -276,4 +277,39 @@ textarea {
 .input-box{
   width: min(680px, 100%);
   max-width: 800px;
+}
+
+.world-stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--border-radius-lg);
+}
+
+.world-stage__scene,
+.world-stage__atmosphere {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.world-stage__scene {
+  z-index: 0;
+  object-fit: cover;
+}
+
+.world-stage__atmosphere {
+  z-index: 1;
+  background: linear-gradient(
+    180deg,
+    rgba(12, 20, 31, 0.12),
+    rgba(12, 20, 31, 0.38)
+  );
+}
+
+.world-stage__content {
+  position: relative;
+  z-index: 2;
 }

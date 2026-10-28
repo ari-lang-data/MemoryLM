@@ -1,10 +1,12 @@
 import { useState, useCallback, useRef } from "react";
 import { modalBackdropValues } from "../lib/fermiDirac";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 const { opacity: backdropOpacity, blur: backdropBlur } = modalBackdropValues();
 
 // ── Modal component ────────────────────────────────────────────────────────────
 export function ConfirmModal({ message, onConfirm, onCancel, confirmLabel = "Confirm", danger = true }) {
+  const isMobile = useIsMobile();
   return (
     <div
       onClick={onCancel}
@@ -35,7 +37,7 @@ export function ConfirmModal({ message, onConfirm, onCancel, confirmLabel = "Con
           gap:           20,
         }}
       >
-        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: "var(--color-text-primary)" }}>
+        <p style={{ margin: 0, fontSize: isMobile ? 17 : 14, lineHeight: 1.6, color: "var(--color-text-primary)" }}>
           {message}
         </p>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -47,7 +49,7 @@ export function ConfirmModal({ message, onConfirm, onCancel, confirmLabel = "Con
               border:       "0.5px solid var(--color-border-secondary)",
               background:   "transparent",
               color:        "var(--color-text-secondary)",
-              fontSize:     13,
+              fontSize:     isMobile? 16 : 13,
               cursor:       "pointer",
             }}
           >
@@ -62,7 +64,7 @@ export function ConfirmModal({ message, onConfirm, onCancel, confirmLabel = "Con
               border:       `0.5px solid ${danger ? "var(--color-border-danger)" : "var(--color-border-primary)"}`,
               background:   danger ? "var(--color-background-danger)" : "var(--color-background-secondary)",
               color:        danger ? "var(--color-text-danger)" : "var(--color-text-primary)",
-              fontSize:     13,
+              fontSize:     isMobile? 16 : 13,
               cursor:       "pointer",
               fontWeight:   500,
             }}

@@ -30,6 +30,7 @@ class MemoryQuery(BaseModel):
     threshold: float = 0.35
     alpha:     float = 0.7
     decay_rate: float = 0.01
+    world_offset_minutes: Optional[int] = None
     query_text: Optional[str] = None   # only sent when experiment logging is active
 
 class ClusterAssign(BaseModel):
@@ -41,29 +42,44 @@ class ClusterAssign(BaseModel):
 
 # ─── Lorebook ─────────────────────────────────────────────────────────────────
 
+class LoreBookCreate(BaseModel):
+    title:      str
+    cover:      dict = {}
+    world_id:   Optional[str] = None
+
+class LoreBookUpdate(BaseModel):
+    title:      Optional[str] = None
+    cover:      Optional[dict] = None
+    world_id:   Optional[str] = None
+
 class LorebookAdd(BaseModel):
-    id: str
-    title: str
-    type: str
-    tags: str = ""
-    content: str
-    embedding: list[float]
-    timestamp: str
-    pinned:    bool = False
+    id:              str
+    lorebook_id:     str
+    title:           str
+    type:            str
+    tags:            str = ""
+    content:         str
+    embedding:       list[float]
+    embedding_model: str = ""
+    timestamp:       str
+    pinned:          bool = False
 
 class LorebookUpdate(BaseModel):
-    title: str
-    type: str
-    tags: str = ""
-    content: str
-    embedding: list[float]
-    timestamp: str
-    pinned:    bool = False
+    lorebook_id:     Optional[str] = None
+    title:           str
+    type:            str
+    tags:            str = ""
+    content:         str
+    embedding:       list[float]
+    embedding_model: str = ""
+    timestamp:       str
+    pinned:          bool = False
 
 class LorebookQuery(BaseModel):
     embedding: list[float]
     n_results: int = 4
     threshold: float = 0.35
+    lorebook_ids: Optional[list[str]] = None
 
 # ─── Chats ────────────────────────────────────────────────────────────────────
 
@@ -79,6 +95,9 @@ class ChatUpdate(BaseModel):
 
 class ChatArchiveUpdate(BaseModel):
     archived: bool
+
+class ChatLorebooksUpdate(BaseModel):
+    lorebook_ids: list[str]
 
 class ChatBindCharacters(BaseModel):
     active_char_id: Optional[str] = None
@@ -199,6 +218,34 @@ class CharacterCardUpdate(BaseModel):
     address_formal:    Optional[str]  = None   # formal address: "Professor Dumbledore"
     address_informal:  Optional[str]  = None   # informal address: "Albus"
     bias: float = 0.5
+
+# ――― Connection ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+
+class ConnectionCreate(BaseModel):
+    label: str
+    provider: str  # openai-compatible | anthropic
+    base_url: str
+    api_key: Optional[str] = None
+    model_name: str
+    reasoning_enabled: bool = False
+    reasoning_effort: str = "medium"
+    reasoning_budget_tokens: Optional[int] = None
+
+class ConnectionUpdate(BaseModel):
+    label: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    model_name: Optional[str] = None
+    reasoning_enabled: Optional[bool] = None
+    reasoning_effort: Optional[str] = None
+    reasoning_budget_tokens: Optional[int] = None
+
+class ChatCompletionRequest(BaseModel):
+    connection_id: Optional[str] = None
+    messages: list[dict]
+    temperature: float = 0.7
+    max_tokens: Optional[int] = None
+    extra_params: Optional[dict] = None
 
 # ─── Generic responses ────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import { ChevronDown, Database } from "lucide-react";
 import { getConnectedGraph } from "../lib/connectedGraph";
 import ReactMarkdown from "react-markdown";
 import { frostedGlassValues } from "../lib/fermiDirac";
+import LorebookPicker from "./LorebookPicker";
 
 function parseMeta(c) {
   return typeof c?.metadata === "string" ? JSON.parse(c.metadata) : (c?.metadata ?? {});
@@ -10,7 +11,9 @@ function parseMeta(c) {
 
 export default function CharacterProfileCard({
   open, onClose, activeChar, groupChars, memories, characters, entities, graphAPI,
+  lorebooks = [], lorebookEntryCounts = {}, chatLorebookIds = [], onChangeLorebooks,
 }) {
+  const [booksExpanded, setBooksExpanded] = useState(false);
   const [graphState, setGraphState] = useState({ characterIds: new Set(), loreIds: new Set() });
   const [charsExpanded, setCharsExpanded] = useState(false);
   const isGroup = groupChars && groupChars.length > 1;
@@ -126,6 +129,22 @@ export default function CharacterProfileCard({
                     </div>
                 )}
             </div>
+            {lorebooks.length > 0 && (
+              <>
+                <button
+                  onClick={() => setBooksExpanded(e => !e)}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", fontSize: 12, color: "var(--color-text-secondary)", padding: "6px 10px", background: "var(--color-background-primary)", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", cursor: "pointer" }}
+                >
+                  <span>Lorebooks ({chatLorebookIds.length})</span>
+                  <ChevronDown size={13} style={{ transform: booksExpanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+                </button>
+                {booksExpanded && (
+                  <div style={{ maxHeight: 220, overflowY: "auto", padding: "4px 2px 0" }}>
+                    <LorebookPicker lorebooks={lorebooks} entryCounts={lorebookEntryCounts} selectedIds={chatLorebookIds} onChange={onChangeLorebooks} />
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </>
       )}

@@ -14,13 +14,6 @@ import json
 router = APIRouter()
 EXPERIMENT_LOG_DIR = Path("./experiments/logs")
 
-def _world_offset_for_chat(session: Session, chat_id: str) -> Optional[int]:
-    chat = get_chat(session, chat_id)
-    if not chat or not chat.world_id:
-        return None
-    world = session.get(World, chat.world_id)
-    return world.current_offset_minutes if world else None
-
 @router.post("/", response_model=SuccessResponse)
 def add_memory(body: MemoryAdd):
     col = get_memories_collection()
@@ -29,9 +22,10 @@ def add_memory(body: MemoryAdd):
             "chat_id": body.chat_id,
             "source":  body.source,
             "timestamp": body.timestamp,
-            "world_time_at_update": body.world_time_at_update,
             "turns":   body.turns,
         }
+    if body.world_time_at_update is not None:
+        metadata["world_time_at_update"] = body.world_time_at_update
     col.add(
         ids=[body.id],
         embeddings=[body.embedding],
@@ -41,13 +35,11 @@ def add_memory(body: MemoryAdd):
     return SuccessResponse()
 
 @router.post("/query")
-def query_memories(body: MemoryQuery, session: Session=Depends(get_session)):
+def query_memories(body: MemoryQuery):
     col   = get_memories_collection()
     count = col.count()
     if count == 0:
         return []
-
-    current_world_offset = _world_offset_for_chat(session, body.chat_id)
 
     results = col.query(
         query_embeddings=[body.embedding],
@@ -64,7 +56,7 @@ def query_memories(body: MemoryQuery, session: Session=Depends(get_session)):
     hits, all_candidates = [], []
     for id, doc, meta, dist in zip(ids, documents, metadatas, distances):
         similarity = max(0.0, min(1.0, 1 - dist))
-        recency    = recency_score(str(meta.get("timestamp", "")), int(meta.get("world_time_at_update", "0")), current_world_offset, body.decay_rate)
+        recency = recency_score(meta, body.decay_rate, body.world_offset_minutes)
         importance = importance_score(meta)
         score = (
             body.alpha             * similarity  +
@@ -98,14 +90,18 @@ def query_memories(body: MemoryQuery, session: Session=Depends(get_session)):
 
     return hits
 
-def recency_score(timestamp: str, world_time_at_update: int, current_world_offset: Optional[int], decay_rate: float = 0.01) -> float:
+def recency_score(meta: dict, decay_rate: float = 0.01, world_offset_minutes: Optional[int] = None) -> float:
+    world_ts = meta.get("world_time_at_update")
+    if world_offset_minutes is not None and world_ts is not None:
+        age_hours = max(0.0, (world_offset_minutes - world_ts) / 60.0)
+        return math.exp(-decay_rate * age_hours)
     try:
-        ts  = datetime.fromisoformat(timestamp).replace(tzinfo=timezone.utc) if (world_time_at_update is None and current_world_offset is None) else world_time_at_update
-        now = datetime.now(timezone.utc) if (world_time_at_update is None and current_world_offset is None) else current_world_offset
-        age_hours = (current_world_offset-world_time_at_update)/60 if (current_world_offset is not None and world_time_at_update is not None) else (now - ts).total_seconds() / 3600
+        ts  = datetime.fromisoformat(str(meta.get("timestamp", ""))).replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        age_hours = (now - ts).total_seconds() / 3600
         return math.exp(-decay_rate * age_hours)
     except Exception:
-        return 1.0  # if timestamp is malformed, don't penalise
+        return 1.0 # do not penalise for malformed timestamp
     
 def importance_score(meta: dict) -> float:
     retrieval_count = int(meta.get("retrieval_count", 0))

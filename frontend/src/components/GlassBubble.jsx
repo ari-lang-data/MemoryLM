@@ -59,7 +59,7 @@ function useRimTier() {
   return tier;
 }
 
-export default function GlassBubble({ children, style, radius = 20 }) {
+export default function GlassBubble({ children, style, radius = 28 }) {
   const tier = useRimTier();
   return (
     <div style={{ ...style, position: "relative" }}>
@@ -73,7 +73,7 @@ export default function GlassBubble({ children, style, radius = 20 }) {
           filter: "url(#glass-rim-svg)",
         }} />
       ) : (
-        <RimCanvas radius={radius} rimWidth={3} ior={1.52} />
+        <RimCanvas radius={radius} rimWidth={3.5} ior={2.42} />
       )}
     </div>
   );
